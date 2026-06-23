@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -7,8 +8,10 @@ from sqlmodel import select
 from app.database import get_session
 from app.models.naming_profile import NamingProfile
 from app.schemas.naming_profile import NamingProfileCreate, NamingProfileRead, NamingProfileUpdate
+from app.services.naming import NamingService
 
 router = APIRouter(prefix="/naming-profiles", tags=["naming-profiles"])
+_naming = NamingService()
 
 
 @router.post("", response_model=NamingProfileRead, status_code=201)
@@ -24,6 +27,36 @@ async def create_naming_profile(payload: NamingProfileCreate, session: AsyncSess
 async def list_naming_profiles(session: AsyncSession = Depends(get_session)):
     result = await session.execute(select(NamingProfile).where(NamingProfile.is_deleted == False))  # noqa: E712
     return result.scalars().all()
+
+
+@router.get("/{profile_id}/preview")
+async def preview_naming(
+    profile_id: int,
+    owner: Optional[str] = "",
+    team: Optional[str] = "",
+    environment: Optional[str] = "",
+    db_name: Optional[str] = "",
+    session: AsyncSession = Depends(get_session),
+):
+    """Resolve the naming pattern with given context and return the candidate name."""
+    profile = await session.get(NamingProfile, profile_id)
+    if not profile or profile.is_deleted:
+        raise HTTPException(404, "Naming profile not found")
+
+    context = {
+        "owner": owner or "",
+        "team": team or "",
+        "environment": environment or "",
+        "db_name": db_name or "",
+    }
+    name = _naming.apply_profile(profile, context)
+    errors: list[str] = []
+    try:
+        _naming.validate_name(name, profile.reserved_names or [])
+    except ValueError as exc:
+        errors.append(str(exc))
+
+    return {"resolved_name": name, "valid": not errors, "errors": errors, "pattern": profile.pattern}
 
 
 @router.get("/{profile_id}", response_model=NamingProfileRead)

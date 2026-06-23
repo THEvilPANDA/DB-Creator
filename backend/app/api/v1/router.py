@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.v1.admin import router as admin_router
 from app.api.v1.database_templates import router as database_templates_router
 from app.api.v1.health import router as health_router
 from app.api.v1.history import router as history_router
@@ -16,3 +17,4 @@ api_router.include_router(history_router)
 api_router.include_router(naming_profiles_router)
 api_router.include_router(database_templates_router)
 api_router.include_router(request_templates_router)
+api_router.include_router(admin_router)

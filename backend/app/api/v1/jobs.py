@@ -1,5 +1,5 @@
 import asyncio
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -8,12 +8,15 @@ from sqlmodel import select
 from app.database import get_session
 from app.models.approval import ApprovalRequest
 from app.models.job import Job
+from app.models.naming_profile import NamingProfile
+from app.models.request_template import RequestTemplate
 from app.models.server import Server
 from app.schemas.approval import ApprovalDecide, ApprovalRead
 from app.schemas.job import JobCreate, JobRead
 from app.services.approval import ApprovalService
 from app.services.capacity import CapacityService
 from app.services.events import DomainEvent, publisher
+from app.services.naming import NamingService
 from app.services.placement import PlacementService
 from app.services.provisioner.postgresql import PostgreSQLProvisioner
 
@@ -21,68 +24,123 @@ router = APIRouter(prefix="/jobs", tags=["jobs"])
 _approval_svc = ApprovalService()
 _capacity_svc = CapacityService()
 _placement_svc = PlacementService()
+_naming_svc = NamingService()
 
 
-async def _get_capacity(server: Server):
+async def _get_base_capacity(server: Server):
     from app.services.provisioner.base import CapacityMetrics
     if not server.admin_dsn:
-        return CapacityMetrics(server.id, 0, 0, 0.0, 0.0, server.warning_threshold_pct, server.critical_threshold_pct)
+        return CapacityMetrics(server.id, 0, 0, 0.0, 0.0,
+                               server.warning_threshold_pct, server.critical_threshold_pct)
     try:
-        p = PostgreSQLProvisioner(
-            dsn=server.admin_dsn,
-            server_id=server.id,
-            warning_threshold_pct=server.warning_threshold_pct,
-            critical_threshold_pct=server.critical_threshold_pct,
-        )
+        p = PostgreSQLProvisioner(dsn=server.admin_dsn, server_id=server.id,
+                                  warning_threshold_pct=server.warning_threshold_pct,
+                                  critical_threshold_pct=server.critical_threshold_pct)
         return await asyncio.wait_for(p.get_capacity(), timeout=5.0)
     except Exception:
         from app.services.provisioner.base import CapacityMetrics
-        return CapacityMetrics(server.id, 0, 0, 0.0, 0.0, server.warning_threshold_pct, server.critical_threshold_pct)
+        return CapacityMetrics(server.id, 0, 0, 0.0, 0.0,
+                               server.warning_threshold_pct, server.critical_threshold_pct)
 
 
 @router.post("", response_model=JobRead, status_code=201)
 async def submit_job(payload: JobCreate, session: AsyncSession = Depends(get_session)):
-    # Resolve target server
-    target_server: Server | None = None
+    # Work with a mutable copy so we can apply template overrides
+    p = payload.model_dump()
 
-    if payload.server_id:
-        target_server = await session.get(Server, payload.server_id)
+    # ── 1. Apply request template (fills in blanks; caller values win) ──────────
+    if p.get("request_template_id"):
+        tmpl = await session.get(RequestTemplate, p["request_template_id"])
+        if not tmpl or tmpl.is_deleted:
+            raise HTTPException(422, "Request template not found")
+        if not p.get("environment"):
+            p["environment"] = tmpl.environment
+        if not p.get("db_template_id"):
+            p["db_template_id"] = tmpl.db_template_id
+        if not p.get("naming_profile_id"):
+            p["naming_profile_id"] = tmpl.naming_profile_id
+        if not p.get("cost_center"):
+            p["cost_center"] = tmpl.cost_center
+        if not p.get("team"):
+            p["team"] = tmpl.team
+        if not p.get("expires_at") and tmpl.expiration_days:
+            p["expires_at"] = datetime.now(timezone.utc) + timedelta(days=tmpl.expiration_days)
+
+    # ── 2. Resolve target server ─────────────────────────────────────────────────
+    target_server: Server | None = None
+    if p.get("server_id"):
+        target_server = await session.get(Server, p["server_id"])
         if not target_server or target_server.is_deleted or not target_server.is_active:
             raise HTTPException(422, "Server not found or inactive")
     else:
-        # Auto-select via environment_default placement
         result = await session.execute(
             select(Server).where(Server.is_deleted == False, Server.is_active == True)  # noqa: E712
         )
-        all_servers = result.scalars().all()
         target_server = _placement_svc.select(
-            list(all_servers), strategy="environment_default", environment=payload.environment
+            list(result.scalars().all()),
+            strategy="environment_default",
+            environment=p.get("environment"),
         )
 
-    # Capacity gate — only check if we have a server and it has credentials
+    # ── 3. Capacity gate ─────────────────────────────────────────────────────────
     if target_server:
-        metrics = await _get_capacity(target_server)
+        metrics = await _get_base_capacity(target_server)
         if not _capacity_svc.is_accepting_jobs(target_server, metrics):
-            raise HTTPException(422, f"Server '{target_server.name}' is not accepting jobs (health={metrics.health})")
+            raise HTTPException(
+                422,
+                f"Server '{target_server.name}' is not accepting jobs (health={metrics.health})"
+            )
 
-    db_name = payload.db_name or f"db_{int(datetime.now(timezone.utc).timestamp())}"
+    # ── 4. Resolve database name via naming profile ──────────────────────────────
+    db_name: str
+    if p.get("naming_profile_id"):
+        profile = await session.get(NamingProfile, p["naming_profile_id"])
+        if not profile or profile.is_deleted:
+            raise HTTPException(422, "Naming profile not found")
+
+        context = {
+            "owner": p.get("owner") or "",
+            "team": p.get("team") or "",
+            "environment": p.get("environment") or "",
+            "db_name": p.get("db_name") or "",
+        }
+
+        check_exists = None
+        if target_server and target_server.admin_dsn:
+            prov = PostgreSQLProvisioner(
+                dsn=target_server.admin_dsn,
+                server_id=target_server.id,
+                warning_threshold_pct=target_server.warning_threshold_pct,
+                critical_threshold_pct=target_server.critical_threshold_pct,
+            )
+            check_exists = prov.database_exists
+
+        try:
+            db_name = await _naming_svc.generate(profile, context, check_exists)
+        except ValueError as exc:
+            raise HTTPException(422, str(exc))
+    else:
+        raw = p.get("db_name") or f"db_{int(datetime.now(timezone.utc).timestamp())}"
+        db_name = raw
+
+    # ── 5. Create Job + ApprovalRequest ─────────────────────────────────────────
     job = Job(
         db_name=db_name,
-        environment=payload.environment,
-        owner=payload.owner,
-        team=payload.team,
-        cost_center=payload.cost_center,
-        server_id=target_server.id if target_server else payload.server_id,
-        naming_profile_id=payload.naming_profile_id,
-        db_template_id=payload.db_template_id,
-        request_template_id=payload.request_template_id,
-        expires_at=payload.expires_at,
+        environment=p.get("environment", "development"),
+        owner=p.get("owner", ""),
+        team=p.get("team"),
+        cost_center=p.get("cost_center"),
+        server_id=target_server.id if target_server else p.get("server_id"),
+        naming_profile_id=p.get("naming_profile_id"),
+        db_template_id=p.get("db_template_id"),
+        request_template_id=p.get("request_template_id"),
+        expires_at=p.get("expires_at"),
         status="pending",
     )
     session.add(job)
     await session.flush()
 
-    auto_approved = _approval_svc.is_auto_approved(payload.environment)
+    auto_approved = _approval_svc.is_auto_approved(job.environment)
     approval = ApprovalRequest(
         job_id=job.id,
         status="approved" if auto_approved else "pending",
@@ -90,7 +148,6 @@ async def submit_job(payload: JobCreate, session: AsyncSession = Depends(get_ses
         decided_at=datetime.now(timezone.utc) if auto_approved else None,
     )
     session.add(approval)
-
     if auto_approved:
         job.status = "queued"
 

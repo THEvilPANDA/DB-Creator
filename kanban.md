@@ -42,13 +42,15 @@
 
 ---
 
-## 🟠 To Do (Phase 2 — Naming + Templates)
+## ✅ Done (Phase 2 — Naming + Templates)
 
-- [ ] Naming engine: resolve pattern, collision detection against live DB list
-- [ ] Reserved name enforcement on job submission
-- [ ] Database template seeding (Standard, AI/RAG, ERP, Analytics, Custom)
-- [ ] Request template: auto-populate job fields when `request_template_id` provided
-- [ ] `GET /api/v1/naming-profiles/{id}/preview` endpoint
+- [x] `NamingService.apply_profile()` — resolves pattern + applies prefix/suffix/separator
+- [x] `NamingService.generate()` — async, validates name, detects + resolves collisions (up to 99 retries)
+- [x] `GET /api/v1/naming-profiles/{id}/preview` — resolves pattern with given context, returns errors
+- [x] Job submission: applies naming profile (with live collision check via provisioner if server has admin_dsn)
+- [x] Job submission: request template auto-fill (template fills blanks; caller values win)
+- [x] `POST /api/v1/admin/seed` — idempotent seeder for 5 DB templates + 3 naming profiles
+- [x] 11 new unit tests for naming service (34 total passing)
 
 ---
 
