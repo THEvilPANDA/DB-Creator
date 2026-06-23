@@ -95,7 +95,7 @@ async def decide_approval(
         raise HTTPException(400, f"Approval already decided: {approval.status}")
 
     approval.status = payload.status
-    approval.approver = payload.approver
+    approval.approver = "system"  # Phase 7: replace with authenticated principal
     approval.comments = payload.comments
     approval.decided_at = datetime.now(timezone.utc)
     session.add(approval)

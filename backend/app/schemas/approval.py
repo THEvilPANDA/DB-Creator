@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict
 class ApprovalDecide(BaseModel):
     status: Literal["approved", "rejected"]
     comments: Optional[str] = None
-    approver: str = "system"
+    # approver is set server-side; Phase 7 will derive it from the authenticated principal
 
 
 class ApprovalRead(BaseModel):

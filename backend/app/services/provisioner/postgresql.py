@@ -1,3 +1,5 @@
+import re
+
 import asyncpg
 
 from app.services.provisioner.base import (
@@ -9,6 +11,26 @@ from app.services.provisioner.base import (
     UserResult,
     UserSpec,
 )
+
+_IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$")
+
+_ALLOWED_PRIVILEGES = frozenset(
+    {"CONNECT", "TEMPORARY", "TEMP", "CREATE", "USAGE", "ALL"}
+)
+
+_ALLOWED_EXTENSIONS = frozenset(
+    {
+        "uuid-ossp", "pgcrypto", "hstore", "pg_trgm", "btree_gin", "btree_gist",
+        "postgis", "citext", "ltree", "tablefunc", "unaccent", "pg_stat_statements",
+        "vector", "intarray", "lo",
+    }
+)
+
+
+def _quote_identifier(name: str) -> str:
+    if not _IDENTIFIER_RE.match(name):
+        raise ValueError(f"Invalid identifier: {name!r}")
+    return f'"{name}"'
 
 
 class PostgreSQLProvisioner(DatabaseProvisioner):
@@ -46,7 +68,9 @@ class PostgreSQLProvisioner(DatabaseProvisioner):
             )
         conn = await self._connect()
         try:
-            await conn.execute(f'CREATE DATABASE "{spec.name}" OWNER "{spec.owner}"')
+            db = _quote_identifier(spec.name)
+            owner = _quote_identifier(spec.owner)
+            await conn.execute(f"CREATE DATABASE {db} OWNER {owner}")
             return DatabaseResult(db_name=spec.name, success=True)
         except Exception as exc:
             return DatabaseResult(db_name=spec.name, success=False, message=str(exc))
@@ -56,9 +80,9 @@ class PostgreSQLProvisioner(DatabaseProvisioner):
     async def create_user(self, spec: UserSpec) -> UserResult:
         conn = await self._connect()
         try:
-            await conn.execute(
-                f"CREATE USER \"{spec.username}\" WITH PASSWORD '{spec.password}'"
-            )
+            user = _quote_identifier(spec.username)
+            await conn.execute(f"CREATE USER {user}")
+            await conn.execute(f"ALTER USER {user} PASSWORD $1", spec.password)
             return UserResult(username=spec.username, success=True)
         except Exception as exc:
             return UserResult(username=spec.username, success=False, message=str(exc))
@@ -66,21 +90,29 @@ class PostgreSQLProvisioner(DatabaseProvisioner):
             await conn.close()
 
     async def grant_permissions(self, spec: PermissionSpec) -> None:
+        for priv in spec.privileges:
+            if priv.upper() not in _ALLOWED_PRIVILEGES:
+                raise ValueError(f"Privilege not allowed: {priv!r}")
         conn = await self._connect()
         try:
-            privs = ", ".join(spec.privileges)
-            await conn.execute(
-                f'GRANT {privs} ON DATABASE "{spec.db_name}" TO "{spec.username}"'
-            )
+            privs = ", ".join(p.upper() for p in spec.privileges)
+            db = _quote_identifier(spec.db_name)
+            user = _quote_identifier(spec.username)
+            await conn.execute(f"GRANT {privs} ON DATABASE {db} TO {user}")
         finally:
             await conn.close()
 
     async def enable_extensions(self, db_name: str, extensions: list[str]) -> None:
+        for ext in extensions:
+            if ext not in _ALLOWED_EXTENSIONS:
+                raise ValueError(f"Extension not allowed: {ext!r}")
+        _quote_identifier(db_name)  # validate db_name before using in DSN
         db_dsn = self._dsn.rsplit("/", 1)[0] + f"/{db_name}"
         conn = await asyncpg.connect(db_dsn)
         try:
             for ext in extensions:
-                await conn.execute(f'CREATE EXTENSION IF NOT EXISTS "{ext}"')
+                quoted_ext = ext.replace('"', '""')
+                await conn.execute(f'CREATE EXTENSION IF NOT EXISTS "{quoted_ext}"')
         finally:
             await conn.close()
 

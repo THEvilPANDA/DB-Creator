@@ -10,6 +10,7 @@ class Settings(BaseSettings):
     FERNET_KEY: str = ""
     DEBUG: bool = False
     ENVIRONMENT: str = "development"
+    CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
 
 
 settings = Settings()
