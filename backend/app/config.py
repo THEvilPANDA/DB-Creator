@@ -11,6 +11,9 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ENVIRONMENT: str = "development"
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:3000"]
+    # Set to a strong random secret in production to protect admin endpoints.
+    # Phase 7 replaces this with JWT role checks.
+    ADMIN_KEY: str = ""
 
 
 settings = Settings()

@@ -5,10 +5,12 @@ import type {
 } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api/v1'
+const ADMIN_KEY = import.meta.env.VITE_ADMIN_KEY ?? ''
 
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  const adminHeaders: Record<string, string> = ADMIN_KEY ? { 'X-Admin-Key': ADMIN_KEY } : {}
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...init?.headers },
+    headers: { 'Content-Type': 'application/json', ...adminHeaders, ...init?.headers },
     ...init,
   })
   if (!res.ok) {
