@@ -1,7 +1,7 @@
 # DB Creator — Kanban Board (Enterprise Architecture v3)
 
 **Last Updated**: 2026-06-24
-**Current Focus**: Phase 1 — Server Management + Capacity + Placement
+**Current Focus**: Phase 5 — Dashboard + Observability
 
 ---
 
@@ -67,11 +67,16 @@
 
 ---
 
-## 🟣 To Do (Phase 4 — Events + Audit)
+## ✅ Done (Phase 4 — Events + Audit)
 
-- [ ] `AuditLog` writes on every state change (job submit, approval, cancel, delete)
-- [ ] Domain event consumers (placeholder Slack/Teams/SIEM hooks)
-- [ ] IaC export generation on provisioning success
+- [x] `AuditLog` writes on every state change: job submit, approval decided, job cancel, provision start/complete/fail, credential access
+- [x] `write_audit()` helper in `app/services/audit.py` (used by jobs API + worker)
+- [x] Domain event consumers: `app/services/consumers.py` — placeholder log-based handlers for all 4 domain events; registered at startup via `register_consumers()`
+- [x] `GET /jobs/{id}/connection` now writes AuditLog on every credential access
+- [x] SSE sanitized: raw `error_message` no longer leaks into stream (returns `"error": true`; full message via `GET /jobs/{id}`)
+- [x] Security finding acknowledged: IDOR on connection + SSE endpoints flagged for Phase 7 (needs `get_current_user`); Phase 7 TODO comments in code
+- [x] IaC export generation: done in Phase 3
+- [x] 4 new consumer tests (43 unit tests total passing)
 
 ---
 

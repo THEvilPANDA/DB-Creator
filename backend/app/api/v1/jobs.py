@@ -18,6 +18,7 @@ from app.models.server import Server
 from app.schemas.approval import ApprovalDecide, ApprovalRead
 from app.schemas.job import JobCreate, JobRead
 from app.services.approval import ApprovalService
+from app.services.audit import write_audit
 from app.services.capacity import CapacityService
 from app.services.events import DomainEvent, publisher
 from app.services.naming import NamingService
@@ -152,6 +153,9 @@ async def submit_job(
     if auto_approved:
         job.status = "queued"
 
+    await write_audit(session, actor="system", action="job.submit", entity_type="job",
+                      entity_id=job.id, payload={"environment": job.environment, "db_name": job.db_name,
+                                                   "auto_approved": auto_approved})
     await session.commit()
     await session.refresh(job)
 
@@ -177,8 +181,8 @@ async def job_events(job_id: int):
             if job.status != last_status:
                 last_status = job.status
                 payload = {"status": job.status, "job_id": job_id, "db_name": job.db_name}
-                if job.error_message:
-                    payload["error"] = job.error_message
+                if job.status == "failed":
+                    payload["error"] = True  # raw error_message withheld; use GET /jobs/{id}
                 yield f"data: {json.dumps(payload)}\n\n"
             if job.status in _TERMINAL:
                 yield "event: done\ndata: {}\n\n"
@@ -195,7 +199,11 @@ async def job_events(job_id: int):
 
 @router.get("/{job_id}/connection")
 async def job_connection(job_id: int, session: AsyncSession = Depends(get_session)):
-    """Return connection details and IaC snippets for a successfully provisioned job."""
+    """Return connection details and IaC snippets for a successfully provisioned job.
+
+    SECURITY (Phase 7): restrict to authenticated owner or admin via get_current_user.
+    Currently unprotected — deploy behind a network boundary until auth is added.
+    """
     job = await session.get(Job, job_id)
     if not job or job.is_deleted:
         raise HTTPException(404, "Job not found")
@@ -208,6 +216,11 @@ async def job_connection(job_id: int, session: AsyncSession = Depends(get_sessio
     log = result.scalars().first()
     if not log:
         raise HTTPException(404, "Connection details not yet available")
+
+    await write_audit(session, actor="system", action="job.connection_accessed",
+                      entity_type="job", entity_id=job_id,
+                      payload={"db_name": log.db_name, "db_user": log.db_user})
+    await session.commit()
 
     return {
         "db_name": log.db_name,
@@ -245,6 +258,8 @@ async def cancel_job(job_id: int, session: AsyncSession = Depends(get_session)):
     job.deleted_at = datetime.now(timezone.utc)
     job.deleted_by = "system"
     session.add(job)
+    await write_audit(session, actor="system", action="job.cancel", entity_type="job",
+                      entity_id=job_id, payload={"previous_status": job.status})
     await session.commit()
     await session.refresh(job)
     return job
@@ -271,6 +286,9 @@ async def decide_approval(
     approval.comments = payload.comments
     approval.decided_at = datetime.now(timezone.utc)
     session.add(approval)
+    await write_audit(session, actor="system", action=f"approval.{payload.status}",
+                      entity_type="job", entity_id=job_id,
+                      payload={"approval_id": approval.id, "comments": payload.comments})
 
     if payload.status == "approved":
         job = await session.get(Job, job_id)

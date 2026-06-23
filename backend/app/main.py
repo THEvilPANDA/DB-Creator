@@ -6,10 +6,13 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.api.v1.health import router as health_router
 from app.api.v1.router import api_router
 from app.config import settings
+from app.services.consumers import register_consumers
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    register_consumers()
+
     # Connect Arq Redis pool (graceful degradation if Redis is unavailable)
     try:
         from arq import create_pool

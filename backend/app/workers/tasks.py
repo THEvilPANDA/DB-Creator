@@ -7,6 +7,7 @@ from app.models.creation_log import CreationLog
 from app.models.database_template import DatabaseTemplate
 from app.models.job import Job
 from app.models.server import Server
+from app.services.audit import write_audit
 from app.services.events import DomainEvent, publisher
 from app.services.iac import generate_terraform, generate_yaml
 from app.services.provisioner.base import DatabaseSpec, PermissionSpec, UserSpec
@@ -43,6 +44,8 @@ async def provision_database(ctx: dict, job_id: int) -> dict:
         job.status = "running"
         job.started_at = datetime.now(timezone.utc)
         session.add(job)
+        await write_audit(session, actor="worker", action="provision.start", entity_type="job",
+                          entity_id=job_id, payload={"server_id": server.id})
         await session.commit()
         publisher.publish(DomainEvent("DatabaseProvisioningStarted", {"job_id": job_id}))
 
@@ -115,6 +118,8 @@ async def provision_database(ctx: dict, job_id: int) -> dict:
             job.status = "succeeded"
             job.completed_at = datetime.now(timezone.utc)
             session.add(job)
+            await write_audit(session, actor="worker", action="provision.complete", entity_type="job",
+                              entity_id=job_id, payload={"db_name": job.db_name, "db_user": db_user})
             await session.commit()
 
             publisher.publish(DomainEvent(
@@ -136,4 +141,6 @@ async def _fail(session, job: Job, message: str) -> None:
     job.error_message = message
     job.completed_at = datetime.now(timezone.utc)
     session.add(job)
+    await write_audit(session, actor="worker", action="provision.fail", entity_type="job",
+                      entity_id=job.id, payload={"error": message[:500]})
     await session.commit()
