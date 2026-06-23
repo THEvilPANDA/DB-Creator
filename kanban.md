@@ -30,13 +30,15 @@
 
 ---
 
-## 🟡 To Do (Phase 1 — Server Management + Capacity)
+## ✅ Done (Phase 1 — Server Management + Capacity)
 
-- [ ] Live capacity metrics via `PostgreSQLProvisioner.get_capacity()` wired into `GET /servers/{id}/capacity`
-- [ ] Placement strategies: `LeastDBs`, `RoundRobin`, `EnvironmentDefault` implementations
-- [ ] Capacity gate on job submission: block if server health is `critical`
-- [ ] Server health summary endpoint: `GET /api/v1/servers/health-summary`
-- [ ] Integration tests with live Postgres (Docker Compose)
+- [x] `admin_dsn` field on Server (Alembic migration b1c2d3e4f5a6); `has_admin_dsn` in API response
+- [x] Live capacity metrics via `PostgreSQLProvisioner.get_capacity()` wired into `GET /servers/{id}/capacity` (5s timeout, graceful fallback to `health=unknown`)
+- [x] `GET /api/v1/servers/health-summary` — aggregate health across all servers
+- [x] Placement strategies: `least_dbs`, `round_robin`, `environment_default` (default)
+- [x] Capacity gate on job submission: blocks if health=critical OR connections ≥ 90% of max
+- [x] Auto-placement on job submission when `server_id` is omitted
+- [x] Integration test stubs in `tests/api/test_servers.py`
 
 ---
 

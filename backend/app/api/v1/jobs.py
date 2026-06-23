@@ -1,3 +1,4 @@
+import asyncio
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -7,17 +8,63 @@ from sqlmodel import select
 from app.database import get_session
 from app.models.approval import ApprovalRequest
 from app.models.job import Job
+from app.models.server import Server
 from app.schemas.approval import ApprovalDecide, ApprovalRead
 from app.schemas.job import JobCreate, JobRead
 from app.services.approval import ApprovalService
+from app.services.capacity import CapacityService
 from app.services.events import DomainEvent, publisher
+from app.services.placement import PlacementService
+from app.services.provisioner.postgresql import PostgreSQLProvisioner
 
 router = APIRouter(prefix="/jobs", tags=["jobs"])
-_approval_service = ApprovalService()
+_approval_svc = ApprovalService()
+_capacity_svc = CapacityService()
+_placement_svc = PlacementService()
+
+
+async def _get_capacity(server: Server):
+    from app.services.provisioner.base import CapacityMetrics
+    if not server.admin_dsn:
+        return CapacityMetrics(server.id, 0, 0, 0.0, 0.0, server.warning_threshold_pct, server.critical_threshold_pct)
+    try:
+        p = PostgreSQLProvisioner(
+            dsn=server.admin_dsn,
+            server_id=server.id,
+            warning_threshold_pct=server.warning_threshold_pct,
+            critical_threshold_pct=server.critical_threshold_pct,
+        )
+        return await asyncio.wait_for(p.get_capacity(), timeout=5.0)
+    except Exception:
+        from app.services.provisioner.base import CapacityMetrics
+        return CapacityMetrics(server.id, 0, 0, 0.0, 0.0, server.warning_threshold_pct, server.critical_threshold_pct)
 
 
 @router.post("", response_model=JobRead, status_code=201)
 async def submit_job(payload: JobCreate, session: AsyncSession = Depends(get_session)):
+    # Resolve target server
+    target_server: Server | None = None
+
+    if payload.server_id:
+        target_server = await session.get(Server, payload.server_id)
+        if not target_server or target_server.is_deleted or not target_server.is_active:
+            raise HTTPException(422, "Server not found or inactive")
+    else:
+        # Auto-select via environment_default placement
+        result = await session.execute(
+            select(Server).where(Server.is_deleted == False, Server.is_active == True)  # noqa: E712
+        )
+        all_servers = result.scalars().all()
+        target_server = _placement_svc.select(
+            list(all_servers), strategy="environment_default", environment=payload.environment
+        )
+
+    # Capacity gate — only check if we have a server and it has credentials
+    if target_server:
+        metrics = await _get_capacity(target_server)
+        if not _capacity_svc.is_accepting_jobs(target_server, metrics):
+            raise HTTPException(422, f"Server '{target_server.name}' is not accepting jobs (health={metrics.health})")
+
     db_name = payload.db_name or f"db_{int(datetime.now(timezone.utc).timestamp())}"
     job = Job(
         db_name=db_name,
@@ -25,7 +72,7 @@ async def submit_job(payload: JobCreate, session: AsyncSession = Depends(get_ses
         owner=payload.owner,
         team=payload.team,
         cost_center=payload.cost_center,
-        server_id=payload.server_id,
+        server_id=target_server.id if target_server else payload.server_id,
         naming_profile_id=payload.naming_profile_id,
         db_template_id=payload.db_template_id,
         request_template_id=payload.request_template_id,
@@ -35,7 +82,7 @@ async def submit_job(payload: JobCreate, session: AsyncSession = Depends(get_ses
     session.add(job)
     await session.flush()
 
-    auto_approved = _approval_service.is_auto_approved(payload.environment)
+    auto_approved = _approval_svc.is_auto_approved(payload.environment)
     approval = ApprovalRequest(
         job_id=job.id,
         status="approved" if auto_approved else "pending",

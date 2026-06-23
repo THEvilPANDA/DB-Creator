@@ -32,6 +32,10 @@ class Server(SQLModel, table=True):
         sa_column=sa.Column(sa.DateTime(timezone=True), default=_utcnow, onupdate=_utcnow),
     )
 
+    # Encrypted admin DSN used by the provisioner for capacity checks.
+    # WARNING: store encrypted in production (see backlog: Fernet encryption).
+    admin_dsn: Optional[str] = Field(default=None, sa_column=sa.Column(sa.Text, nullable=True))
+
     is_deleted: bool = Field(default=False)
     deleted_at: Optional[datetime] = Field(default=None)
     deleted_by: Optional[str] = Field(default=None, max_length=255)

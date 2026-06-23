@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, model_validator
 
 
 class ServerCreate(BaseModel):
@@ -16,6 +16,7 @@ class ServerCreate(BaseModel):
     max_storage_gb: float = 100.0
     warning_threshold_pct: float = 75.0
     critical_threshold_pct: float = 90.0
+    admin_dsn: Optional[str] = None
 
 
 class ServerUpdate(BaseModel):
@@ -27,6 +28,7 @@ class ServerUpdate(BaseModel):
     max_storage_gb: Optional[float] = None
     warning_threshold_pct: Optional[float] = None
     critical_threshold_pct: Optional[float] = None
+    admin_dsn: Optional[str] = None
 
 
 class ServerRead(BaseModel):
@@ -44,8 +46,25 @@ class ServerRead(BaseModel):
     max_storage_gb: float
     warning_threshold_pct: float
     critical_threshold_pct: float
+    has_admin_dsn: bool = False
     created_at: datetime
     is_deleted: bool
+
+    @model_validator(mode="before")
+    @classmethod
+    def _populate_flags(cls, v):
+        if isinstance(v, dict):
+            if "admin_dsn" in v:
+                v.setdefault("has_admin_dsn", bool(v["admin_dsn"]))
+            return v
+        # ORM object — extract fields manually so admin_dsn stays out of response
+        d: dict = {}
+        for fname in cls.model_fields:
+            if fname == "has_admin_dsn":
+                d["has_admin_dsn"] = bool(getattr(v, "admin_dsn", None))
+            else:
+                d[fname] = getattr(v, fname, None)
+        return d
 
 
 class CapacityMetrics(BaseModel):
@@ -55,3 +74,21 @@ class CapacityMetrics(BaseModel):
     disk_used_gb: float
     disk_free_gb: float
     health: str
+
+
+class ServerHealthEntry(BaseModel):
+    server_id: int
+    name: str
+    environment: str
+    health: str
+    db_count: int
+    active_connections: int
+    disk_used_gb: float
+
+
+class HealthSummaryResponse(BaseModel):
+    servers: list[ServerHealthEntry]
+    healthy: int
+    warning: int
+    critical: int
+    unknown: int
