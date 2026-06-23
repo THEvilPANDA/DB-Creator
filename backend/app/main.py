@@ -7,6 +7,7 @@ from app.api.v1.health import router as health_router
 from app.api.v1.router import api_router
 from app.config import settings
 from app.services.consumers import register_consumers
+from app.metrics import _prometheus_available
 
 
 @asynccontextmanager
@@ -44,3 +45,7 @@ app.add_middleware(
 
 app.include_router(health_router)
 app.include_router(api_router)
+
+if _prometheus_available:
+    from prometheus_client import make_asgi_app
+    app.mount("/metrics", make_asgi_app())

@@ -1,8 +1,10 @@
 import secrets
+import time
 from datetime import datetime, timezone
 from urllib.parse import urlparse
 
 from app.database import AsyncSessionLocal
+from app.metrics import JOBS_COMPLETED, PROVISION_DURATION
 from app.models.creation_log import CreationLog
 from app.models.database_template import DatabaseTemplate
 from app.models.job import Job
@@ -41,6 +43,7 @@ async def provision_database(ctx: dict, job_id: int) -> dict:
         )
 
         # Mark running
+        _start = time.monotonic()
         job.status = "running"
         job.started_at = datetime.now(timezone.utc)
         session.add(job)
@@ -115,11 +118,16 @@ async def provision_database(ctx: dict, job_id: int) -> dict:
             )
             session.add(log)
 
+            elapsed = time.monotonic() - _start
+            PROVISION_DURATION.labels(environment=job.environment).observe(elapsed)
+            JOBS_COMPLETED.labels(status="succeeded", environment=job.environment).inc()
+
             job.status = "succeeded"
             job.completed_at = datetime.now(timezone.utc)
             session.add(job)
             await write_audit(session, actor="worker", action="provision.complete", entity_type="job",
-                              entity_id=job_id, payload={"db_name": job.db_name, "db_user": db_user})
+                              entity_id=job_id, payload={"db_name": job.db_name, "db_user": db_user,
+                                                          "duration_s": round(elapsed, 2)})
             await session.commit()
 
             publisher.publish(DomainEvent(
@@ -129,6 +137,7 @@ async def provision_database(ctx: dict, job_id: int) -> dict:
             return {"success": True, "job_id": job_id, "db_name": job.db_name}
 
         except Exception as exc:
+            JOBS_COMPLETED.labels(status="failed", environment=job.environment).inc()
             await _fail(session, job, str(exc)[:1000])
             publisher.publish(DomainEvent(
                 "DatabaseProvisioningFailed", {"job_id": job_id, "error": str(exc)}

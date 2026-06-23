@@ -7,7 +7,9 @@ from app.api.v1.history import router as history_router
 from app.api.v1.jobs import router as jobs_router
 from app.api.v1.naming_profiles import router as naming_profiles_router
 from app.api.v1.request_templates import router as request_templates_router
+from app.api.v1.search import router as search_router
 from app.api.v1.servers import router as servers_router
+from app.api.v1.stats import router as stats_router
 
 api_router = APIRouter(prefix="/api/v1")
 api_router.include_router(health_router)
@@ -18,3 +20,5 @@ api_router.include_router(naming_profiles_router)
 api_router.include_router(database_templates_router)
 api_router.include_router(request_templates_router)
 api_router.include_router(admin_router)
+api_router.include_router(stats_router)
+api_router.include_router(search_router)

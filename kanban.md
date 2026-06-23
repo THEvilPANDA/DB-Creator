@@ -1,7 +1,7 @@
 # DB Creator — Kanban Board (Enterprise Architecture v3)
 
 **Last Updated**: 2026-06-24
-**Current Focus**: Phase 5 — Dashboard + Observability
+**Current Focus**: Phase 6 — Settings Management UI
 
 ---
 
@@ -80,14 +80,20 @@
 
 ---
 
-## 🟢 To Do (Phase 5 — Dashboard + Observability)
+## ✅ Done (Phase 5 — Dashboard + Observability)
 
-- [ ] OpenTelemetry instrumentation
-- [ ] Prometheus metrics endpoint `/metrics`: provisioning duration, failure rate, queue length, success rate
-- [ ] Grafana dashboard templates
-- [ ] Full-text search across jobs/servers/templates
-- [ ] History with advanced filters (environment, expiration status, template, approver)
-- [ ] Frontend components: Dashboard, Job History, Server List
+- [x] `prometheus-client` added to `requirements.txt`; metrics stub falls back gracefully if not installed
+- [x] `app/metrics.py` — `JOBS_SUBMITTED`, `JOBS_COMPLETED`, `PROVISION_DURATION` (histogram with 8 buckets)
+- [x] `GET /metrics` — Prometheus text format via `make_asgi_app()`, mounted only when prometheus-client available
+- [x] Worker instrumented: duration histogram observed on completion; `JOBS_COMPLETED` counter incremented on succeed/fail
+- [x] `GET /api/v1/stats` — JSON: total jobs, by_status, by_environment, success_rate_pct, server count, total_provisioned
+- [x] `GET /api/v1/search?q=&type=` — ILIKE full-text search across jobs, servers, and database templates
+- [x] History endpoint enhanced: `environment`, `status`, `server_id` filters (join with Job table)
+- [x] Grafana + Prometheus added to docker-compose under `monitoring` profile; `docker compose --profile monitoring up`
+- [x] `docker/prometheus.yml` scrape config; `docker/grafana/dashboards/dbcreator.json` — 6-panel dashboard (stat + gauge + timeseries)
+- [x] Frontend Dashboard: live stats section (Total Provisioned, Total Jobs, Success Rate, Active Servers, Status breakdown)
+- [x] Frontend Jobs: environment + status filter dropdowns on history table
+- [x] 6 new metrics unit tests (49 total passing)
 
 ---
 

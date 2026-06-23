@@ -73,3 +73,14 @@ export interface HealthCheck {
   environment?: string
   detail?: string
 }
+
+export interface Stats {
+  jobs: {
+    total: number
+    by_status: Record<string, number>
+    by_environment: Record<string, number>
+    success_rate_pct: number
+  }
+  servers: { total: number; active: number }
+  history: { total_provisioned: number }
+}

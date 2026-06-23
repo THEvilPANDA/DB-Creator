@@ -1,0 +1,174 @@
+{
+  "title": "DB Creator",
+  "uid": "dbcreator-v1",
+  "schemaVersion": 38,
+  "version": 1,
+  "tags": ["dbcreator"],
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 1,
+  "links": [],
+  "annotations": { "list": [] },
+  "templating": { "list": [] },
+  "time": { "from": "now-6h", "to": "now" },
+  "timepicker": {},
+  "refresh": "30s",
+  "panels": [
+    {
+      "id": 1,
+      "type": "stat",
+      "title": "Total Submitted",
+      "gridPos": { "h": 4, "w": 6, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "blue", "value": null }
+          ]}
+        }
+      },
+      "targets": [{
+        "datasource": { "type": "prometheus" },
+        "expr": "sum(dbcreator_jobs_submitted_total) or vector(0)",
+        "legendFormat": "Submitted",
+        "refId": "A"
+      }]
+    },
+    {
+      "id": 2,
+      "type": "stat",
+      "title": "Succeeded",
+      "gridPos": { "h": 4, "w": 6, "x": 6, "y": 0 },
+      "datasource": { "type": "prometheus" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "green", "value": null }
+          ]}
+        }
+      },
+      "targets": [{
+        "datasource": { "type": "prometheus" },
+        "expr": "sum(dbcreator_jobs_completed_total{status='succeeded'}) or vector(0)",
+        "legendFormat": "Succeeded",
+        "refId": "A"
+      }]
+    },
+    {
+      "id": 3,
+      "type": "stat",
+      "title": "Failed",
+      "gridPos": { "h": 4, "w": 6, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "fieldConfig": {
+        "defaults": { "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red", "value": null }
+          ]}
+        }
+      },
+      "targets": [{
+        "datasource": { "type": "prometheus" },
+        "expr": "sum(dbcreator_jobs_completed_total{status='failed'}) or vector(0)",
+        "legendFormat": "Failed",
+        "refId": "A"
+      }]
+    },
+    {
+      "id": 4,
+      "type": "gauge",
+      "title": "Success Rate",
+      "gridPos": { "h": 4, "w": 6, "x": 18, "y": 0 },
+      "datasource": { "type": "prometheus" },
+      "options": {
+        "reduceOptions": { "calcs": ["lastNotNull"] },
+        "minVizWidth": 75,
+        "minVizHeight": 75
+      },
+      "fieldConfig": {
+        "defaults": {
+          "min": 0,
+          "max": 100,
+          "unit": "percent",
+          "color": { "mode": "thresholds" },
+          "thresholds": { "mode": "absolute", "steps": [
+            { "color": "red", "value": null },
+            { "color": "yellow", "value": 80 },
+            { "color": "green", "value": 95 }
+          ]}
+        }
+      },
+      "targets": [{
+        "datasource": { "type": "prometheus" },
+        "expr": "100 * sum(dbcreator_jobs_completed_total{status='succeeded'}) / clamp_min(sum(dbcreator_jobs_completed_total), 1)",
+        "legendFormat": "Success %",
+        "refId": "A"
+      }]
+    },
+    {
+      "id": 5,
+      "type": "timeseries",
+      "title": "Job Submission Rate",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 4 },
+      "datasource": { "type": "prometheus" },
+      "options": { "tooltip": { "mode": "multi" } },
+      "fieldConfig": {
+        "defaults": { "custom": { "lineWidth": 2 } }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus" },
+          "expr": "sum by(environment) (rate(dbcreator_jobs_submitted_total[5m]))",
+          "legendFormat": "{{environment}}",
+          "refId": "A"
+        }
+      ]
+    },
+    {
+      "id": 6,
+      "type": "timeseries",
+      "title": "Provisioning Duration (seconds)",
+      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 4 },
+      "datasource": { "type": "prometheus" },
+      "options": { "tooltip": { "mode": "multi" } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "custom": { "lineWidth": 2 }
+        }
+      },
+      "targets": [
+        {
+          "datasource": { "type": "prometheus" },
+          "expr": "histogram_quantile(0.50, sum by(le, environment) (rate(dbcreator_provisioning_duration_seconds_bucket[5m])))",
+          "legendFormat": "p50 {{environment}}",
+          "refId": "A"
+        },
+        {
+          "datasource": { "type": "prometheus" },
+          "expr": "histogram_quantile(0.95, sum by(le, environment) (rate(dbcreator_provisioning_duration_seconds_bucket[5m])))",
+          "legendFormat": "p95 {{environment}}",
+          "refId": "B"
+        }
+      ]
+    }
+  ]
+}

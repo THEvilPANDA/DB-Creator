@@ -3,6 +3,7 @@ import { api } from '../api'
 import type { CreationLog, Job, JobCreate, Server } from '../types'
 
 const ENVS = ['development', 'staging', 'production']
+const STATUSES = ['pending', 'queued', 'running', 'succeeded', 'failed', 'cancelled']
 const blank: JobCreate = { db_name: '', environment: 'development', owner: '', team: '', cost_center: '' }
 
 function statusBadge(status: string) {
@@ -19,10 +20,12 @@ export default function Jobs() {
   const [error, setError] = useState('')
   const [histError, setHistError] = useState('')
   const [histLoading, setHistLoading] = useState(true)
+  const [filterEnv, setFilterEnv] = useState('')
+  const [filterStatus, setFilterStatus] = useState('')
 
-  const loadHistory = () => {
+  const loadHistory = (env = filterEnv, status = filterStatus) => {
     setHistLoading(true)
-    api.history()
+    api.history(1, 20, env || undefined, status || undefined)
       .then(r => { setHistory(r.items); setHistTotal(r.total) })
       .catch(e => setHistError(e.message))
       .finally(() => setHistLoading(false))
@@ -122,9 +125,29 @@ export default function Jobs() {
       </div>
 
       {/* History */}
-      <div className="row between mb-4">
-        <div className="section-title">Provisioning History {histTotal > 0 && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 13 }}>({histTotal})</span>}</div>
-        <button className="btn btn-secondary btn-sm" onClick={loadHistory}>Refresh</button>
+      <div className="row between mb-4" style={{ flexWrap: 'wrap', gap: 8 }}>
+        <div className="section-title" style={{ marginBottom: 0 }}>
+          Provisioning History {histTotal > 0 && <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 13 }}>({histTotal})</span>}
+        </div>
+        <div className="row gap-2" style={{ flexWrap: 'wrap' }}>
+          <select
+            value={filterEnv}
+            style={{ fontSize: 12, padding: '4px 8px' }}
+            onChange={e => { setFilterEnv(e.target.value); loadHistory(e.target.value, filterStatus) }}
+          >
+            <option value="">All environments</option>
+            {ENVS.map(e => <option key={e}>{e}</option>)}
+          </select>
+          <select
+            value={filterStatus}
+            style={{ fontSize: 12, padding: '4px 8px' }}
+            onChange={e => { setFilterStatus(e.target.value); loadHistory(filterEnv, e.target.value) }}
+          >
+            <option value="">All statuses</option>
+            {STATUSES.map(s => <option key={s}>{s}</option>)}
+          </select>
+          <button className="btn btn-secondary btn-sm" onClick={() => loadHistory()}>Refresh</button>
+        </div>
       </div>
 
       {histError && <div className="alert alert-error">{histError}</div>}

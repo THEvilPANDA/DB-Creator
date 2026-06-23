@@ -1,4 +1,4 @@
-import type { CreationLog, HealthCheck, Job, JobCreate, Paginated, Server, ServerCreate } from './types'
+import type { CreationLog, HealthCheck, Job, JobCreate, Paginated, Server, ServerCreate, Stats } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api/v1'
 
@@ -32,6 +32,13 @@ export const api = {
     approve: (id: number, status: 'approved' | 'rejected', comments?: string) =>
       req<unknown>(`/jobs/${id}/approve`, { method: 'POST', body: JSON.stringify({ status, comments }) }),
   },
-  history: (page = 1, pageSize = 20) =>
-    req<Paginated<CreationLog>>(`/history?page=${page}&page_size=${pageSize}`),
+  history: (page = 1, pageSize = 20, environment?: string, status?: string) => {
+    const p = new URLSearchParams({ page: String(page), page_size: String(pageSize) })
+    if (environment) p.set('environment', environment)
+    if (status) p.set('status', status)
+    return req<Paginated<CreationLog>>(`/history?${p}`)
+  },
+  stats: () => req<Stats>('/stats'),
+  search: (q: string, type = 'all') =>
+    req<Record<string, unknown[]>>(`/search?q=${encodeURIComponent(q)}&type=${type}`),
 }

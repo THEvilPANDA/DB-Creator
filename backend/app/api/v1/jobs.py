@@ -17,6 +17,7 @@ from app.models.request_template import RequestTemplate
 from app.models.server import Server
 from app.schemas.approval import ApprovalDecide, ApprovalRead
 from app.schemas.job import JobCreate, JobRead
+from app.metrics import JOBS_SUBMITTED
 from app.services.approval import ApprovalService
 from app.services.audit import write_audit
 from app.services.capacity import CapacityService
@@ -159,6 +160,7 @@ async def submit_job(
     await session.commit()
     await session.refresh(job)
 
+    JOBS_SUBMITTED.labels(environment=job.environment).inc()
     publisher.publish(DomainEvent("DatabaseRequested", {"job_id": job.id, "environment": job.environment}))
 
     if auto_approved and arq:
