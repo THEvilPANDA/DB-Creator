@@ -1,14 +1,16 @@
 import { useState } from 'react'
 import Dashboard from './pages/Dashboard'
-import Servers from './pages/Servers'
 import Jobs from './pages/Jobs'
+import Servers from './pages/Servers'
+import Settings from './pages/Settings'
 
-type Page = 'dashboard' | 'servers' | 'jobs'
+type Page = 'dashboard' | 'servers' | 'jobs' | 'settings'
 
 const NAV: { id: Page; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: '⬡' },
   { id: 'servers', label: 'Servers', icon: '◫' },
   { id: 'jobs', label: 'Jobs', icon: '⟳' },
+  { id: 'settings', label: 'Settings', icon: '⚙' },
 ]
 
 export default function App() {
@@ -38,6 +40,7 @@ export default function App() {
         {page === 'dashboard' && <Dashboard />}
         {page === 'servers' && <Servers />}
         {page === 'jobs' && <Jobs />}
+        {page === 'settings' && <Settings />}
       </main>
     </>
   )

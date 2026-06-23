@@ -6,6 +6,7 @@ const ENVS = ['development', 'staging', 'production']
 const blank: ServerCreate = {
   name: '', host: '', port: 5432, engine: 'postgresql',
   environment: 'development', region: '', max_connections: 100, max_storage_gb: 100,
+  warning_threshold_pct: 75, critical_threshold_pct: 90,
 }
 
 export default function Servers() {
@@ -105,6 +106,19 @@ export default function Servers() {
                 <label>Max Storage (GB)</label>
                 <input type="number" value={form.max_storage_gb} onChange={e => set('max_storage_gb', Number(e.target.value))} />
               </div>
+              <div className="form-group">
+                <label>Warning threshold % <span style={{ color: 'var(--muted)', fontSize: 11 }}>(connections)</span></label>
+                <input type="number" min={0} max={100} value={form.warning_threshold_pct} onChange={e => set('warning_threshold_pct', Number(e.target.value))} />
+              </div>
+              <div className="form-group">
+                <label>Critical threshold % <span style={{ color: 'var(--muted)', fontSize: 11 }}>(blocks new jobs)</span></label>
+                <input type="number" min={0} max={100} value={form.critical_threshold_pct} onChange={e => set('critical_threshold_pct', Number(e.target.value))} />
+              </div>
+              <div className="form-group">
+                <label>Admin DSN <span style={{ color: 'var(--muted)', fontSize: 11 }}>(required for live provisioning)</span></label>
+                <input type="password" value={form.admin_dsn ?? ''} onChange={e => set('admin_dsn', e.target.value)}
+                  placeholder="postgresql://postgres:pass@host:5432/postgres" />
+              </div>
             </div>
             <div className="row gap-2 mt-4">
               <button className="btn btn-primary" type="submit" disabled={submitting}>
@@ -129,8 +143,9 @@ export default function Servers() {
                 <th>Environment</th>
                 <th>Region</th>
                 <th>Status</th>
+                <th>Admin DSN</th>
                 <th>Max Conn</th>
-                <th>Max GB</th>
+                <th>Warn / Crit %</th>
                 <th></th>
               </tr>
             </thead>
@@ -146,8 +161,13 @@ export default function Servers() {
                       {s.is_active ? 'Active' : 'Inactive'}
                     </span>
                   </td>
+                  <td>
+                    <span style={{ color: s.has_admin_dsn ? 'var(--green)' : 'var(--muted)', fontSize: 12 }}>
+                      {s.has_admin_dsn ? 'Set' : 'Not set'}
+                    </span>
+                  </td>
                   <td>{s.max_connections}</td>
-                  <td>{s.max_storage_gb}</td>
+                  <td style={{ fontSize: 12 }}>{s.warning_threshold_pct}% / {s.critical_threshold_pct}%</td>
                   <td>
                     <button className="btn btn-danger btn-sm" onClick={() => remove(s.id, s.name)}>Delete</button>
                   </td>

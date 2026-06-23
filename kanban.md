@@ -1,7 +1,7 @@
 # DB Creator — Kanban Board (Enterprise Architecture v3)
 
 **Last Updated**: 2026-06-24
-**Current Focus**: Phase 6 — Settings Management UI
+**Current Focus**: Phase 7 — Auth + Hardening
 
 ---
 
@@ -97,11 +97,17 @@
 
 ---
 
-## 🔵 To Do (Phase 6 — Settings Management UI)
+## ✅ Done (Phase 6 — Settings Management UI)
 
-- [ ] Settings pages for Servers, Naming Profiles, Database Templates, Request Templates
-- [ ] Quota fields exposed in forms
-- [ ] API-backed admin actions for approval policy configuration
+- [x] `app/services/approval.py` — `_auto_approved_envs` made mutable; `get/set_auto_approved_environments()` helpers
+- [x] `GET /api/v1/admin/approval-policy` + `PUT /api/v1/admin/approval-policy` — live policy update (in-process; resets on restart)
+- [x] Frontend: Settings page (`pages/Settings.tsx`) with 4 tabs:
+  - **Naming Profiles** — list + create (name, pattern, prefix/suffix/separator, reserved names, collision flag) + delete
+  - **Database Templates** — list + create (name, description, extensions, app_user privileges) + delete
+  - **Request Templates** — list + create (all fields, DB template and naming profile selects auto-loaded) + delete
+  - **Approval Policy** — checkbox UI to toggle auto-approved environments with save button
+- [x] Servers page: added warning_threshold_pct, critical_threshold_pct, admin_dsn fields to create form; table shows `has_admin_dsn` status and threshold percentages
+- [x] 6 new approval policy unit tests (55 total passing)
 
 ---
 

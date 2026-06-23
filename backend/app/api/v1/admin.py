@@ -1,15 +1,19 @@
 """
-Admin endpoints — idempotent seeders for standard templates and naming profiles.
+Admin endpoints — idempotent seeders and runtime configuration.
 Run once after first deployment:
   curl -X POST http://localhost:8000/api/v1/admin/seed
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.database import get_session
 from app.models.database_template import DatabaseTemplate
 from app.models.naming_profile import NamingProfile
+from app.services.approval import get_auto_approved_environments, set_auto_approved_environments
+
+_VALID_ENVIRONMENTS = {"development", "staging", "production"}
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -110,3 +114,28 @@ async def seed_defaults(session: AsyncSession = Depends(get_session)):
         "skipped_templates": [s["name"] for s in _DB_TEMPLATES if s["name"] not in created_templates],
         "skipped_profiles": [s["name"] for s in _NAMING_PROFILES if s["name"] not in created_profiles],
     }
+
+
+# ── Approval policy ───────────────────────────────────────────────────────────
+
+class ApprovalPolicyUpdate(BaseModel):
+    auto_approved_environments: list[str]
+
+
+@router.get("/approval-policy")
+async def get_approval_policy():
+    """Return the environments that get auto-approved on job submission."""
+    return {"auto_approved_environments": get_auto_approved_environments()}
+
+
+@router.put("/approval-policy")
+async def update_approval_policy(payload: ApprovalPolicyUpdate):
+    """Update which environments are auto-approved. Changes are in-process only (reset on restart)."""
+    for env in payload.auto_approved_environments:
+        if env.lower().strip() not in _VALID_ENVIRONMENTS:
+            raise HTTPException(
+                422,
+                f"Unknown environment: {env!r}. Must be one of {sorted(_VALID_ENVIRONMENTS)}",
+            )
+    set_auto_approved_environments(payload.auto_approved_environments)
+    return {"auto_approved_environments": get_auto_approved_environments()}

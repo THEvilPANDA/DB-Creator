@@ -1,4 +1,8 @@
-import type { CreationLog, HealthCheck, Job, JobCreate, Paginated, Server, ServerCreate, Stats } from './types'
+import type {
+  ApprovalPolicy, CreationLog, DBTemplate, DBTemplateCreate,
+  HealthCheck, Job, JobCreate, NamingProfile, NamingProfileCreate,
+  Paginated, RequestTemplate, RequestTemplateCreate, Server, ServerCreate, Stats,
+} from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api/v1'
 
@@ -41,4 +45,40 @@ export const api = {
   stats: () => req<Stats>('/stats'),
   search: (q: string, type = 'all') =>
     req<Record<string, unknown[]>>(`/search?q=${encodeURIComponent(q)}&type=${type}`),
+  naming: {
+    list: () => req<NamingProfile[]>('/naming-profiles'),
+    create: (data: NamingProfileCreate) =>
+      req<NamingProfile>('/naming-profiles', { method: 'POST', body: JSON.stringify(data) }),
+    delete: (id: number) =>
+      req<NamingProfile>(`/naming-profiles/${id}`, { method: 'DELETE' }),
+    preview: (id: number, ctx: Record<string, string>) => {
+      const p = new URLSearchParams(ctx)
+      return req<{ resolved_name: string; valid: boolean; errors: string[]; pattern: string }>(
+        `/naming-profiles/${id}/preview?${p}`
+      )
+    },
+  },
+  dbTemplates: {
+    list: () => req<DBTemplate[]>('/database-templates'),
+    create: (data: DBTemplateCreate) =>
+      req<DBTemplate>('/database-templates', { method: 'POST', body: JSON.stringify(data) }),
+    delete: (id: number) =>
+      req<DBTemplate>(`/database-templates/${id}`, { method: 'DELETE' }),
+  },
+  requestTemplates: {
+    list: () => req<RequestTemplate[]>('/request-templates'),
+    create: (data: RequestTemplateCreate) =>
+      req<RequestTemplate>('/request-templates', { method: 'POST', body: JSON.stringify(data) }),
+    delete: (id: number) =>
+      req<RequestTemplate>(`/request-templates/${id}`, { method: 'DELETE' }),
+  },
+  admin: {
+    seed: () => req<unknown>('/admin/seed', { method: 'POST' }),
+    getApprovalPolicy: () => req<ApprovalPolicy>('/admin/approval-policy'),
+    setApprovalPolicy: (envs: string[]) =>
+      req<ApprovalPolicy>('/admin/approval-policy', {
+        method: 'PUT',
+        body: JSON.stringify({ auto_approved_environments: envs }),
+      }),
+  },
 }
