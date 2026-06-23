@@ -10,7 +10,19 @@ from app.config import settings
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    # Connect Arq Redis pool (graceful degradation if Redis is unavailable)
+    try:
+        from arq import create_pool
+        from arq.connections import RedisSettings
+
+        app.state.arq = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
+    except Exception:
+        app.state.arq = None  # worker won't function, but API still serves
+
     yield
+
+    if getattr(app.state, "arq", None):
+        await app.state.arq.aclose()
 
 
 app = FastAPI(

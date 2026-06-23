@@ -1,12 +1,16 @@
 import asyncio
+import json
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException
+from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
-from app.database import get_session
+from app.database import AsyncSessionLocal, get_session
+from app.dependencies import get_arq
 from app.models.approval import ApprovalRequest
+from app.models.creation_log import CreationLog
 from app.models.job import Job
 from app.models.naming_profile import NamingProfile
 from app.models.request_template import RequestTemplate
@@ -26,6 +30,8 @@ _capacity_svc = CapacityService()
 _placement_svc = PlacementService()
 _naming_svc = NamingService()
 
+_TERMINAL = frozenset({"succeeded", "failed", "cancelled"})
+
 
 async def _get_base_capacity(server: Server):
     from app.services.provisioner.base import CapacityMetrics
@@ -44,11 +50,14 @@ async def _get_base_capacity(server: Server):
 
 
 @router.post("", response_model=JobRead, status_code=201)
-async def submit_job(payload: JobCreate, session: AsyncSession = Depends(get_session)):
-    # Work with a mutable copy so we can apply template overrides
+async def submit_job(
+    payload: JobCreate,
+    session: AsyncSession = Depends(get_session),
+    arq=Depends(get_arq),
+):
     p = payload.model_dump()
 
-    # ── 1. Apply request template (fills in blanks; caller values win) ──────────
+    # ── 1. Request template auto-fill ───────────────────────────────────────────
     if p.get("request_template_id"):
         tmpl = await session.get(RequestTemplate, p["request_template_id"])
         if not tmpl or tmpl.is_deleted:
@@ -91,37 +100,29 @@ async def submit_job(payload: JobCreate, session: AsyncSession = Depends(get_ses
                 f"Server '{target_server.name}' is not accepting jobs (health={metrics.health})"
             )
 
-    # ── 4. Resolve database name via naming profile ──────────────────────────────
-    db_name: str
+    # ── 4. Naming profile resolution ─────────────────────────────────────────────
     if p.get("naming_profile_id"):
         profile = await session.get(NamingProfile, p["naming_profile_id"])
         if not profile or profile.is_deleted:
             raise HTTPException(422, "Naming profile not found")
-
         context = {
             "owner": p.get("owner") or "",
             "team": p.get("team") or "",
             "environment": p.get("environment") or "",
             "db_name": p.get("db_name") or "",
         }
-
         check_exists = None
         if target_server and target_server.admin_dsn:
-            prov = PostgreSQLProvisioner(
-                dsn=target_server.admin_dsn,
-                server_id=target_server.id,
-                warning_threshold_pct=target_server.warning_threshold_pct,
-                critical_threshold_pct=target_server.critical_threshold_pct,
-            )
+            prov = PostgreSQLProvisioner(dsn=target_server.admin_dsn, server_id=target_server.id,
+                                         warning_threshold_pct=target_server.warning_threshold_pct,
+                                         critical_threshold_pct=target_server.critical_threshold_pct)
             check_exists = prov.database_exists
-
         try:
             db_name = await _naming_svc.generate(profile, context, check_exists)
         except ValueError as exc:
             raise HTTPException(422, str(exc))
     else:
-        raw = p.get("db_name") or f"db_{int(datetime.now(timezone.utc).timestamp())}"
-        db_name = raw
+        db_name = p.get("db_name") or f"db_{int(datetime.now(timezone.utc).timestamp())}"
 
     # ── 5. Create Job + ApprovalRequest ─────────────────────────────────────────
     job = Job(
@@ -155,7 +156,73 @@ async def submit_job(payload: JobCreate, session: AsyncSession = Depends(get_ses
     await session.refresh(job)
 
     publisher.publish(DomainEvent("DatabaseRequested", {"job_id": job.id, "environment": job.environment}))
+
+    if auto_approved and arq:
+        await arq.enqueue_job("provision_database", job_id=job.id)
+
     return job
+
+
+@router.get("/{job_id}/events")
+async def job_events(job_id: int):
+    """Stream job status changes via Server-Sent Events (text/event-stream)."""
+    async def generate():
+        last_status = None
+        for _ in range(300):  # 5-minute max stream
+            async with AsyncSessionLocal() as s:
+                job = await s.get(Job, job_id)
+            if not job:
+                yield f"data: {json.dumps({'error': 'Job not found'})}\n\n"
+                return
+            if job.status != last_status:
+                last_status = job.status
+                payload = {"status": job.status, "job_id": job_id, "db_name": job.db_name}
+                if job.error_message:
+                    payload["error"] = job.error_message
+                yield f"data: {json.dumps(payload)}\n\n"
+            if job.status in _TERMINAL:
+                yield "event: done\ndata: {}\n\n"
+                return
+            await asyncio.sleep(1)
+        yield f"data: {json.dumps({'error': 'stream timeout after 5 minutes'})}\n\n"
+
+    return StreamingResponse(
+        generate(),
+        media_type="text/event-stream",
+        headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+    )
+
+
+@router.get("/{job_id}/connection")
+async def job_connection(job_id: int, session: AsyncSession = Depends(get_session)):
+    """Return connection details and IaC snippets for a successfully provisioned job."""
+    job = await session.get(Job, job_id)
+    if not job or job.is_deleted:
+        raise HTTPException(404, "Job not found")
+    if job.status != "succeeded":
+        raise HTTPException(409, f"Job is not succeeded (status: {job.status})")
+
+    result = await session.execute(
+        select(CreationLog).where(CreationLog.job_id == job_id)
+    )
+    log = result.scalars().first()
+    if not log:
+        raise HTTPException(404, "Connection details not yet available")
+
+    return {
+        "db_name": log.db_name,
+        "db_user": log.db_user,
+        "connection_uri": log.connection_uri,
+        "env_vars": {
+            "DB_NAME": log.db_name,
+            "DB_USER": log.db_user or "",
+            "DB_HOST": log.connection_uri.split("@")[1].rsplit("/", 1)[0] if log.connection_uri else "",
+            "DB_PORT": "5432",
+            "DATABASE_URL": log.connection_uri or "",
+        },
+        "iac_yaml": log.iac_yaml,
+        "iac_terraform": log.iac_terraform,
+    }
 
 
 @router.get("/{job_id}", response_model=JobRead)
@@ -188,6 +255,7 @@ async def decide_approval(
     job_id: int,
     payload: ApprovalDecide,
     session: AsyncSession = Depends(get_session),
+    arq=Depends(get_arq),
 ):
     result = await session.execute(
         select(ApprovalRequest).where(ApprovalRequest.job_id == job_id)
@@ -209,7 +277,11 @@ async def decide_approval(
         if job:
             job.status = "queued"
             session.add(job)
+            await session.commit()
+            if arq:
+                await arq.enqueue_job("provision_database", job_id=job.id)
+    else:
+        await session.commit()
 
-    await session.commit()
     await session.refresh(approval)
     return approval

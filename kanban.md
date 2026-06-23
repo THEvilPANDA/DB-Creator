@@ -54,13 +54,16 @@
 
 ---
 
-## 🔵 To Do (Phase 3 — Full Creator Flow)
+## ✅ Done (Phase 3 — Full Creator Flow)
 
-- [ ] Full job submission flow: capacity gate → placement → naming → approval → Arq enqueue
-- [ ] `PostgreSQLProvisioner` wired into worker (server credentials from DB)
-- [ ] SSE endpoint: `GET /api/v1/jobs/{id}/events` (real-time status stream)
-- [ ] Connection helpers in job response (URI, env vars, PgAdmin/DBeaver config)
-- [ ] IaC export: YAML + Terraform snippets in `CreationLog`
+- [x] Arq pool created in FastAPI lifespan (graceful degradation if Redis unavailable)
+- [x] Auto-approval + manual approval both enqueue `provision_database` task to Arq
+- [x] Worker: `PostgreSQLProvisioner` fully wired — create_user → create_database → grant_permissions → enable_extensions
+- [x] Worker: writes `CreationLog` with `connection_uri`, `iac_yaml`, `iac_terraform`
+- [x] `GET /api/v1/jobs/{id}/events` — SSE stream (1s polling, ends on terminal state, 5-min timeout)
+- [x] `GET /api/v1/jobs/{id}/connection` — returns URI, env vars, IaC snippets after provisioning
+- [x] `app/services/iac.py` — YAML + Terraform snippet generators
+- [x] 5 IaC unit tests (39 total passing)
 
 ---
 
