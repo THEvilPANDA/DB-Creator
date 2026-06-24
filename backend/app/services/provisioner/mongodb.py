@@ -1,0 +1,19 @@
+# stub — real impl in Task 4
+from app.services.provisioner.base import DatabaseProvisioner, DatabaseResult, DatabaseSpec, UserResult, UserSpec, PermissionSpec, CapacityMetrics
+
+
+class MongoDBProvisioner(DatabaseProvisioner):
+    def __init__(self, dsn, server_id, warning_threshold_pct=75.0, critical_threshold_pct=90.0):
+        pass
+
+    async def create_database(self, spec): ...
+
+    async def create_user(self, spec): ...
+
+    async def grant_permissions(self, spec): ...
+
+    async def enable_extensions(self, db_name, extensions): ...
+
+    async def get_capacity(self): ...
+
+    async def database_exists(self, db_name): ...

@@ -9,6 +9,7 @@ class DatabaseSpec:
     owner: str
     extensions: list[str] = field(default_factory=list)
     template: Optional[str] = None
+    options: dict = field(default_factory=dict)
 
 
 @dataclass
