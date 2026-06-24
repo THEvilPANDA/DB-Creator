@@ -13,13 +13,19 @@ from app.services.audit import write_audit
 from app.services.events import DomainEvent, publisher
 from app.services.iac import generate_terraform, generate_yaml
 from app.services.provisioner.base import DatabaseSpec, PermissionSpec, UserSpec
-from app.services.provisioner.postgresql import PostgreSQLProvisioner
+from app.services.provisioner.factory import get_provisioner
 
 
-def _dsn_user(dsn: str) -> str:
-    """Extract the username from a DSN string."""
-    parsed = urlparse(dsn)
-    return parsed.username or "postgres"
+def _build_connection_uri(engine: str, user: str, password: str, host: str, port: int, db_name: str) -> str:
+    if engine == "qdrant":
+        return f"http://{host}:{port}/collections/{db_name}"
+    scheme = {
+        "postgresql": "postgresql",
+        "pgvector": "postgresql",
+        "mysql": "mysql",
+        "mongodb": "mongodb",
+    }.get(engine, "postgresql")
+    return f"{scheme}://{user}:{password}@{host}:{port}/{db_name}"
 
 
 async def provision_database(ctx: dict, job_id: int) -> dict:
@@ -28,7 +34,6 @@ async def provision_database(ctx: dict, job_id: int) -> dict:
         if not job:
             return {"success": False, "error": "Job not found"}
 
-        # Validate prerequisites
         if not job.server_id:
             await _fail(session, job, "No server assigned to this job")
             return {"success": False, "error": "No server assigned"}
@@ -42,7 +47,6 @@ async def provision_database(ctx: dict, job_id: int) -> dict:
             await session.get(DatabaseTemplate, job.db_template_id) if job.db_template_id else None
         )
 
-        # Mark running
         _start = time.monotonic()
         job.status = "running"
         job.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
@@ -53,12 +57,7 @@ async def provision_database(ctx: dict, job_id: int) -> dict:
         publisher.publish(DomainEvent("DatabaseProvisioningStarted", {"job_id": job_id}))
 
         try:
-            provisioner = PostgreSQLProvisioner(
-                dsn=server.admin_dsn,
-                server_id=server.id,
-                warning_threshold_pct=server.warning_threshold_pct,
-                critical_threshold_pct=server.critical_threshold_pct,
-            )
+            provisioner = get_provisioner(server)
 
             extensions: list[str] = db_template.extensions if db_template else []
             privileges: list[str] = ["CONNECT", "CREATE"]
@@ -70,7 +69,6 @@ async def provision_database(ctx: dict, job_id: int) -> dict:
             db_user = f"{job.db_name}_user"
             db_password = secrets.token_urlsafe(24)
 
-            # Order matters: create user → create DB owned by user → grant → extensions
             user_result = await provisioner.create_user(
                 UserSpec(username=db_user, password=db_password, db_name=job.db_name)
             )
@@ -90,8 +88,13 @@ async def provision_database(ctx: dict, job_id: int) -> dict:
             if extensions:
                 await provisioner.enable_extensions(job.db_name, extensions)
 
-            connection_uri = (
-                f"postgresql://{db_user}:{db_password}@{server.host}:{server.port}/{job.db_name}"
+            connection_uri = _build_connection_uri(
+                engine=server.engine,
+                user=db_user,
+                password=db_password,
+                host=server.host,
+                port=server.port,
+                db_name=job.db_name,
             )
 
             log = CreationLog(

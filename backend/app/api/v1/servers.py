@@ -16,7 +16,7 @@ from app.schemas.server import (
     ServerRead,
     ServerUpdate,
 )
-from app.services.provisioner.postgresql import PostgreSQLProvisioner
+from app.services.provisioner.factory import get_provisioner
 
 router = APIRouter(prefix="/servers", tags=["servers"])
 
@@ -30,12 +30,7 @@ async def _live_capacity(server: Server) -> CapacityMetrics:
     if not server.admin_dsn:
         return _UNKNOWN_CAPACITY(server.id)
     try:
-        provisioner = PostgreSQLProvisioner(
-            dsn=server.admin_dsn,
-            server_id=server.id,
-            warning_threshold_pct=server.warning_threshold_pct,
-            critical_threshold_pct=server.critical_threshold_pct,
-        )
+        provisioner = get_provisioner(server)
         m = await asyncio.wait_for(provisioner.get_capacity(), timeout=5.0)
         return CapacityMetrics(
             server_id=m.server_id,
@@ -114,7 +109,7 @@ async def update_server(
         raise HTTPException(status_code=404, detail="Server not found")
     for key, value in payload.model_dump(exclude_none=True).items():
         setattr(server, key, value)
-    server.updated_at = datetime.now(timezone.utc)
+    server.updated_at = datetime.now(timezone.utc).replace(tzinfo=None)
     session.add(server)
     await session.commit()
     await session.refresh(server)
