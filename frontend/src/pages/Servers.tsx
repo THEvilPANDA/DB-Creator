@@ -3,6 +3,24 @@ import { api } from '../api'
 import type { Server, ServerCreate } from '../types'
 
 const ENVS = ['development', 'staging', 'production']
+const ENGINES = ['postgresql', 'pgvector', 'mysql', 'mongodb', 'qdrant']
+
+const ENGINE_PORT: Record<string, number> = {
+  postgresql: 5432, pgvector: 5432, mysql: 3306, mongodb: 27017, qdrant: 6333,
+}
+
+const ENGINE_DSN_PLACEHOLDER: Record<string, string> = {
+  postgresql: 'postgresql://postgres:pass@host:5432/postgres',
+  pgvector:   'postgresql://postgres:pass@host:5432/postgres',
+  mysql:      'mysql://root:pass@host:3306/',
+  mongodb:    'mongodb://admin:pass@host:27017/',
+  qdrant:     'http://host:6333',
+}
+
+const ENGINE_DSN_LABEL: Record<string, string> = {
+  qdrant: 'Connection URL (no credentials in URL for Qdrant)',
+}
+
 const blank: ServerCreate = {
   name: '', host: '', port: 5432, engine: 'postgresql',
   environment: 'development', region: '', max_connections: 100, max_storage_gb: 100,
@@ -13,6 +31,7 @@ export default function Servers() {
   const [servers, setServers] = useState<Server[]>([])
   const [loading, setLoading] = useState(true)
   const [showForm, setShowForm] = useState(false)
+  const [editingId, setEditingId] = useState<number | null>(null)
   const [form, setForm] = useState<ServerCreate>(blank)
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
@@ -31,16 +50,44 @@ export default function Servers() {
   const set = (k: keyof ServerCreate, v: string | number) =>
     setForm(f => ({ ...f, [k]: v }))
 
+  const onEngineChange = (engine: string) => {
+    setForm(f => ({ ...f, engine, port: ENGINE_PORT[engine] ?? f.port }))
+  }
+
+  const openEdit = (s: Server) => {
+    setEditingId(s.id)
+    setForm({
+      name: s.name, host: s.host, port: s.port, engine: s.engine,
+      environment: s.environment, region: s.region ?? '',
+      max_connections: s.max_connections, max_storage_gb: s.max_storage_gb,
+      warning_threshold_pct: s.warning_threshold_pct, critical_threshold_pct: s.critical_threshold_pct,
+    })
+    setShowForm(true)
+    setError('')
+    setSuccess('')
+  }
+
+  const closeForm = () => {
+    setShowForm(false); setEditingId(null); setForm(blank); setError(''); setSuccess('')
+  }
+
   const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setSubmitting(true)
     setError('')
     setSuccess('')
     try {
-      await api.servers.create({ ...form, region: form.region || undefined })
-      setSuccess('Server registered.')
-      setShowForm(false)
-      setForm(blank)
+      const payload = { ...form, region: form.region || undefined }
+      if (editingId !== null) {
+        if (!payload.admin_dsn) delete payload.admin_dsn
+        if (!payload.api_key) delete payload.api_key
+        await api.servers.update(editingId, payload)
+        setSuccess('Server updated.')
+      } else {
+        await api.servers.create(payload)
+        setSuccess('Server registered.')
+      }
+      closeForm()
       load()
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : String(e))
@@ -59,11 +106,17 @@ export default function Servers() {
     }
   }
 
+  const isQdrant = form.engine === 'qdrant'
+  const dsnLabel = ENGINE_DSN_LABEL[form.engine] ?? 'Admin DSN'
+  const dsnPlaceholder = editingId !== null
+    ? 'Leave blank to keep current'
+    : ENGINE_DSN_PLACEHOLDER[form.engine] ?? 'connection-string'
+
   return (
     <>
       <div className="row between mb-4">
         <h2 className="page-title" style={{ marginBottom: 0 }}>Servers</h2>
-        <button className="btn btn-primary" onClick={() => { setShowForm(s => !s); setError(''); setSuccess('') }}>
+        <button className="btn btn-primary" onClick={() => showForm ? closeForm() : setShowForm(true)}>
           {showForm ? 'Cancel' : '+ Add Server'}
         </button>
       </div>
@@ -73,12 +126,20 @@ export default function Servers() {
 
       {showForm && (
         <div className="card mb-4">
-          <div className="section-title mb-4" style={{ marginBottom: 16 }}>Register Server</div>
+          <div className="section-title mb-4" style={{ marginBottom: 16 }}>
+            {editingId !== null ? 'Edit Server' : 'Register Server'}
+          </div>
           <form onSubmit={submit}>
             <div className="grid-2">
               <div className="form-group">
                 <label>Name *</label>
                 <input required value={form.name} onChange={e => set('name', e.target.value)} placeholder="prod-pg-01" />
+              </div>
+              <div className="form-group">
+                <label>Engine</label>
+                <select value={form.engine} onChange={e => onEngineChange(e.target.value)}>
+                  {ENGINES.map(eng => <option key={eng}>{eng}</option>)}
+                </select>
               </div>
               <div className="form-group">
                 <label>Host *</label>
@@ -107,22 +168,45 @@ export default function Servers() {
                 <input type="number" value={form.max_storage_gb} onChange={e => set('max_storage_gb', Number(e.target.value))} />
               </div>
               <div className="form-group">
-                <label>Warning threshold % <span style={{ color: 'var(--muted)', fontSize: 11 }}>(connections)</span></label>
+                <label>Warning threshold %</label>
                 <input type="number" min={0} max={100} value={form.warning_threshold_pct} onChange={e => set('warning_threshold_pct', Number(e.target.value))} />
               </div>
               <div className="form-group">
-                <label>Critical threshold % <span style={{ color: 'var(--muted)', fontSize: 11 }}>(blocks new jobs)</span></label>
+                <label>Critical threshold %</label>
                 <input type="number" min={0} max={100} value={form.critical_threshold_pct} onChange={e => set('critical_threshold_pct', Number(e.target.value))} />
               </div>
               <div className="form-group">
-                <label>Admin DSN <span style={{ color: 'var(--muted)', fontSize: 11 }}>(required for live provisioning)</span></label>
-                <input type="password" value={form.admin_dsn ?? ''} onChange={e => set('admin_dsn', e.target.value)}
-                  placeholder="postgresql://postgres:pass@host:5432/postgres" />
+                <label>
+                  {dsnLabel}
+                  <span style={{ color: 'var(--muted)', fontSize: 11 }}> (required for provisioning)</span>
+                </label>
+                <input
+                  type="password"
+                  value={form.admin_dsn ?? ''}
+                  onChange={e => set('admin_dsn', e.target.value)}
+                  placeholder={dsnPlaceholder}
+                />
               </div>
+              {isQdrant && (
+                <div className="form-group">
+                  <label>
+                    API Key
+                    <span style={{ color: 'var(--muted)', fontSize: 11 }}> (optional — OSS Qdrant)</span>
+                  </label>
+                  <input
+                    type="password"
+                    value={form.api_key ?? ''}
+                    onChange={e => set('api_key', e.target.value)}
+                    placeholder={editingId !== null ? 'Leave blank to keep current' : 'qdrant-api-key'}
+                  />
+                </div>
+              )}
             </div>
             <div className="row gap-2 mt-4">
               <button className="btn btn-primary" type="submit" disabled={submitting}>
-                {submitting ? 'Registering…' : 'Register Server'}
+                {submitting
+                  ? (editingId !== null ? 'Saving…' : 'Registering…')
+                  : (editingId !== null ? 'Save Changes' : 'Register Server')}
               </button>
             </div>
           </form>
@@ -139,6 +223,7 @@ export default function Servers() {
             <thead>
               <tr>
                 <th>Name</th>
+                <th>Engine</th>
                 <th>Host</th>
                 <th>Environment</th>
                 <th>Region</th>
@@ -153,6 +238,7 @@ export default function Servers() {
               {servers.map(s => (
                 <tr key={s.id}>
                   <td style={{ fontWeight: 500 }}>{s.name}</td>
+                  <td><span className="badge badge-inactive" style={{ fontSize: 11 }}>{s.engine}</span></td>
                   <td><code>{s.host}:{s.port}</code></td>
                   <td>{s.environment}</td>
                   <td>{s.region ?? '—'}</td>
@@ -164,11 +250,13 @@ export default function Servers() {
                   <td>
                     <span style={{ color: s.has_admin_dsn ? 'var(--green)' : 'var(--muted)', fontSize: 12 }}>
                       {s.has_admin_dsn ? 'Set' : 'Not set'}
+                      {s.engine === 'qdrant' && s.has_api_key ? ' · key ✓' : ''}
                     </span>
                   </td>
                   <td>{s.max_connections}</td>
                   <td style={{ fontSize: 12 }}>{s.warning_threshold_pct}% / {s.critical_threshold_pct}%</td>
-                  <td>
+                  <td style={{ whiteSpace: 'nowrap' }}>
+                    <button className="btn btn-sm" style={{ marginRight: 6 }} onClick={() => openEdit(s)}>Edit</button>
                     <button className="btn btn-danger btn-sm" onClick={() => remove(s.id, s.name)}>Delete</button>
                   </td>
                 </tr>

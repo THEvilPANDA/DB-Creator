@@ -12,6 +12,7 @@ export interface Server {
   warning_threshold_pct: number
   critical_threshold_pct: number
   has_admin_dsn: boolean
+  has_api_key: boolean
   created_at: string
   is_deleted: boolean
 }
@@ -28,6 +29,7 @@ export interface ServerCreate {
   warning_threshold_pct: number
   critical_threshold_pct: number
   admin_dsn?: string
+  api_key?: string
 }
 
 export interface Job {
@@ -140,6 +142,14 @@ export interface RequestTemplateCreate {
   expiration_days?: number
   cost_center?: string
   team?: string
+}
+
+export interface QueryResult {
+  columns: string[]
+  rows: unknown[][]
+  row_count: number
+  error: string | null
+  status: string | null
 }
 
 export interface ApprovalPolicy {
