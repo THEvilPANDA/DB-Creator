@@ -10,23 +10,100 @@ services:
     volumes:
       - postgres_data:/var/lib/postgresql/data
       - ./docker/postgres-init.sql:/docker-entrypoint-initdb.d/init.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U dbcreator"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
   redis:
     image: redis:7-alpine
     ports:
       - "6379:6379"
 
+  migrate:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://dbcreator:dbcreator@postgres:5432/dbcreator
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: alembic upgrade head
+    restart: "no"
+
   api:
     build: ./backend
     env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://dbcreator:dbcreator@postgres:5432/dbcreator
+      REDIS_URL: redis://redis:6379/0
     ports:
       - "8000:8000"
     depends_on:
-      - postgres
-      - redis
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
     volumes:
       - ./backend:/app
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8000/health/database', timeout=3)\""
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  worker:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://dbcreator:dbcreator@postgres:5432/dbcreator
+      REDIS_URL: redis://redis:6379/0
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+      redis:
+        condition: service_started
+    volumes:
+      - ./backend:/app
+    command: python -m arq app.workers.worker.WorkerSettings
+    restart: unless-stopped
+
+  seed:
+    build: ./backend
+    env_file: ./backend/.env
+    environment:
+      DATABASE_URL: postgresql+asyncpg://dbcreator:dbcreator@postgres:5432/dbcreator
+    depends_on:
+      api:
+        condition: service_healthy
+    command: >
+      python -c "
+      import httpx, os;
+      r = httpx.post(
+        'http://api:8000/api/v1/admin/seed',
+        headers={'X-Admin-Key': os.environ.get('ADMIN_KEY', '')},
+        timeout=30
+      );
+      print(r.text)
+      "
+    restart: "no"
+
+  frontend:
+    build: ./frontend
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_PROXY_TARGET: http://api:8000
+    depends_on:
+      - api
+    volumes:
+      - ./frontend:/app
+      - /app/node_modules
 
   # Monitoring stack — start with: docker compose --profile monitoring up
   prometheus:
