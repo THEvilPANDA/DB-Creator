@@ -12,13 +12,13 @@ const ENGINE_PORT: Record<string, number> = {
 const ENGINE_DSN_PLACEHOLDER: Record<string, string> = {
   postgresql: 'postgresql://postgres:pass@host:5432/postgres',
   pgvector:   'postgresql://postgres:pass@host:5432/postgres',
-  mysql:      'mysql://root:pass@host:3306/',
+  mysql:      'mysql://user:pass@host:3306/',
   mongodb:    'mongodb://admin:pass@host:27017/',
   qdrant:     'http://host:6333',
 }
 
 const ENGINE_DSN_LABEL: Record<string, string> = {
-  qdrant: 'Connection URL (no credentials in URL for Qdrant)',
+  qdrant: 'Connection URL',
 }
 
 const blank: ServerCreate = {
