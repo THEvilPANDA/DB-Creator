@@ -60,6 +60,22 @@ async def test_health_summary():
 
 
 @pytest.mark.asyncio
+async def test_server_read_exposes_has_api_key_not_api_key(client):
+    """api_key must not appear in ServerRead; has_api_key bool must."""
+    payload = {
+        "name": "qdrant-test", "host": "localhost", "port": 6333, "engine": "qdrant",
+        "environment": "development", "max_connections": 100, "max_storage_gb": 100.0,
+        "warning_threshold_pct": 75.0, "critical_threshold_pct": 90.0,
+        "api_key": "secret-key",
+    }
+    r = await client.post("/api/v1/servers", json=payload)
+    assert r.status_code == 201
+    body = r.json()
+    assert "api_key" not in body           # must not leak
+    assert body["has_api_key"] is True     # flag must be present
+
+
+@pytest.mark.asyncio
 async def test_job_submit_blocks_on_critical_server():
     """When a server is at capacity (critical), job submission must return 422."""
     async with AsyncClient(app=app, base_url="http://test") as client:

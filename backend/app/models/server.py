@@ -35,6 +35,7 @@ class Server(SQLModel, table=True):
     # Encrypted admin DSN used by the provisioner for capacity checks.
     # WARNING: store encrypted in production (see backlog: Fernet encryption).
     admin_dsn: Optional[str] = Field(default=None, sa_column=sa.Column(sa.Text, nullable=True))
+    api_key: Optional[str] = Field(default=None, sa_column=sa.Column(sa.Text, nullable=True))
 
     is_deleted: bool = Field(default=False)
     deleted_at: Optional[datetime] = Field(default=None)

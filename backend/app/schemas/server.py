@@ -17,6 +17,7 @@ class ServerCreate(BaseModel):
     warning_threshold_pct: float = 75.0
     critical_threshold_pct: float = 90.0
     admin_dsn: Optional[str] = None
+    api_key: Optional[str] = None
 
 
 class ServerUpdate(BaseModel):
@@ -29,6 +30,7 @@ class ServerUpdate(BaseModel):
     warning_threshold_pct: Optional[float] = None
     critical_threshold_pct: Optional[float] = None
     admin_dsn: Optional[str] = None
+    api_key: Optional[str] = None
 
 
 class ServerRead(BaseModel):
@@ -47,6 +49,7 @@ class ServerRead(BaseModel):
     warning_threshold_pct: float
     critical_threshold_pct: float
     has_admin_dsn: bool = False
+    has_api_key: bool = False
     created_at: datetime
     is_deleted: bool
 
@@ -56,12 +59,16 @@ class ServerRead(BaseModel):
         if isinstance(v, dict):
             if "admin_dsn" in v:
                 v.setdefault("has_admin_dsn", bool(v["admin_dsn"]))
+            if "api_key" in v:
+                v.setdefault("has_api_key", bool(v["api_key"]))
             return v
-        # ORM object — extract fields manually so admin_dsn stays out of response
+        # ORM object — extract fields manually so admin_dsn and api_key stay out of response
         d: dict = {}
         for fname in cls.model_fields:
             if fname == "has_admin_dsn":
                 d["has_admin_dsn"] = bool(getattr(v, "admin_dsn", None))
+            elif fname == "has_api_key":
+                d["has_api_key"] = bool(getattr(v, "api_key", None))
             else:
                 d[fname] = getattr(v, fname, None)
         return d
