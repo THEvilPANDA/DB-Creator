@@ -75,9 +75,21 @@ export default function Jobs() {
 
         {error && <div className="alert alert-error">{error}</div>}
         {lastJob && (
-          <div className="alert alert-success">
-            Job #{lastJob.id} submitted — status: <strong>{lastJob.status}</strong>
-            {lastJob.status === 'queued' ? ' (auto-approved, worker will provision)' : ' (awaiting approval)'}
+          <div className="alert alert-success" style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
+            <div className="row gap-2" style={{ alignItems: 'center' }}>
+              <strong>Job #{lastJob.id}</strong>
+              {statusBadge(lastJob.status)}
+              <span style={{ color: 'var(--muted)', fontSize: 12 }}>{lastJob.environment}</span>
+              <button
+                className="btn btn-secondary btn-sm"
+                style={{ marginLeft: 'auto' }}
+                onClick={() => api.jobs.get(lastJob.id).then(setLastJob).catch(() => {})}
+              >
+                Refresh
+              </button>
+            </div>
+            <div style={{ fontSize: 13 }}>DB: <code>{lastJob.db_name}</code> · Owner: {lastJob.owner}</div>
+            {lastJob.error_message && <div style={{ color: 'var(--red)', fontSize: 13 }}>{lastJob.error_message}</div>}
           </div>
         )}
 
