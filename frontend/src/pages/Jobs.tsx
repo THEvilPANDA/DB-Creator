@@ -24,6 +24,7 @@ export default function Jobs() {
   const [histLoading, setHistLoading] = useState(true)
   const [filterEnv, setFilterEnv] = useState('')
   const [filterStatus, setFilterStatus] = useState('')
+  const [pendingJobs, setPendingJobs] = useState<Job[]>([])
 
   const loadHistory = (env = filterEnv, status = filterStatus) => {
     setHistLoading(true)
@@ -33,9 +34,14 @@ export default function Jobs() {
       .finally(() => setHistLoading(false))
   }
 
+  const loadPending = () => {
+    api.jobs.list('pending').then(setPendingJobs).catch(() => {})
+  }
+
   useEffect(() => {
     api.servers.list().then(s => setServers(s.filter(x => !x.is_deleted))).catch(() => {})
     loadHistory()
+    loadPending()
   }, [])
 
   const set = (k: string, v: string) => setForm(f => ({ ...f, [k]: v }))
@@ -83,13 +89,23 @@ export default function Jobs() {
               <button
                 className="btn btn-secondary btn-sm"
                 style={{ marginLeft: 'auto' }}
-                onClick={() => api.jobs.get(lastJob.id).then(setLastJob).catch(() => {})}
+                onClick={() => api.jobs.get(lastJob.id).then(j => { setLastJob(j); loadPending() }).catch(() => {})}
               >
                 Refresh
               </button>
             </div>
             <div style={{ fontSize: 13 }}>DB: <code>{lastJob.db_name}</code> · Owner: {lastJob.owner}</div>
             {lastJob.error_message && <div style={{ color: 'var(--red)', fontSize: 13 }}>{lastJob.error_message}</div>}
+            {lastJob.status === 'pending' && (
+              <div className="row gap-2" style={{ marginTop: 4 }}>
+                <button className="btn btn-primary btn-sm" onClick={() =>
+                  api.jobs.approve(lastJob.id, 'approved').then(() => api.jobs.get(lastJob.id)).then(j => { setLastJob(j); loadPending(); loadHistory() }).catch(() => {})
+                }>Approve</button>
+                <button className="btn btn-secondary btn-sm" onClick={() =>
+                  api.jobs.approve(lastJob.id, 'rejected').then(() => api.jobs.get(lastJob.id)).then(j => { setLastJob(j); loadPending() }).catch(() => {})
+                }>Reject</button>
+              </div>
+            )}
           </div>
         )}
 
@@ -137,6 +153,48 @@ export default function Jobs() {
           </div>
         </form>
       </div>
+
+      {/* Approval queue */}
+      {pendingJobs.length > 0 && (
+        <div className="card mb-4" style={{ marginBottom: 24 }}>
+          <div className="row between" style={{ marginBottom: 12 }}>
+            <div className="section-title" style={{ marginBottom: 0 }}>
+              Pending Approval <span style={{ color: 'var(--muted)', fontWeight: 400, fontSize: 13 }}>({pendingJobs.length})</span>
+            </div>
+            <button className="btn btn-secondary btn-sm" onClick={loadPending}>Refresh</button>
+          </div>
+          <div className="table-wrap">
+            <table>
+              <thead>
+                <tr><th>Job</th><th>DB Name</th><th>Owner</th><th>Environment</th><th>Submitted</th><th></th></tr>
+              </thead>
+              <tbody>
+                {pendingJobs.map(job => (
+                  <tr key={job.id}>
+                    <td><code>#{job.id}</code></td>
+                    <td>{job.db_name}</td>
+                    <td>{job.owner}</td>
+                    <td>{job.environment}</td>
+                    <td style={{ color: 'var(--muted)', whiteSpace: 'nowrap', fontSize: 12 }}>
+                      {new Date(job.created_at).toLocaleString()}
+                    </td>
+                    <td>
+                      <div className="row gap-2">
+                        <button className="btn btn-primary btn-sm" onClick={() =>
+                          api.jobs.approve(job.id, 'approved').then(() => { loadPending(); loadHistory() }).catch(() => {})
+                        }>Approve</button>
+                        <button className="btn btn-secondary btn-sm" onClick={() =>
+                          api.jobs.approve(job.id, 'rejected').then(loadPending).catch(() => {})
+                        }>Reject</button>
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* History */}
       <div className="row between mb-4" style={{ flexWrap: 'wrap', gap: 8 }}>

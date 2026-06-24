@@ -1,7 +1,7 @@
 import type {
   ApprovalPolicy, CreationLog, DBTemplate, DBTemplateCreate,
   HealthCheck, Job, JobCreate, NamingProfile, NamingProfileCreate,
-  Paginated, RequestTemplate, RequestTemplateCreate, Server, ServerCreate, Stats,
+  Paginated, QueryResult, RequestTemplate, RequestTemplateCreate, Server, ServerCreate, Stats,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api/v1'
@@ -23,14 +23,63 @@ export const auth = {
   isAuthenticated: () => !!localStorage.getItem(TOKEN_KEY),
 }
 
+// Deduplicated refresh: if multiple requests fail with 401 concurrently,
+// only one refresh call goes out and all waiters share the result.
+let _refreshPromise: Promise<boolean> | null = null
+
+async function _tryRefresh(): Promise<boolean> {
+  const refreshToken = localStorage.getItem(REFRESH_KEY)
+  if (!refreshToken) return false
+  try {
+    const res = await fetch(`${BASE}/auth/refresh`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: refreshToken }),
+    })
+    if (!res.ok) return false
+    const data = await res.json() as { access_token: string; refresh_token: string }
+    auth.setTokens(data.access_token, data.refresh_token)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function _buildHeaders(token: string | null): Record<string, string> {
+  const h: Record<string, string> = { 'Content-Type': 'application/json' }
+  if (ADMIN_KEY) h['X-Admin-Key'] = ADMIN_KEY
+  if (token) h['Authorization'] = `Bearer ${token}`
+  return h
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
-  const token = auth.getToken()
-  const adminHeaders: Record<string, string> = ADMIN_KEY ? { 'X-Admin-Key': ADMIN_KEY } : {}
-  const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...adminHeaders, ...authHeaders, ...init?.headers },
     ...init,
+    headers: { ..._buildHeaders(auth.getToken()), ...init?.headers },
   })
+
+  if (res.status === 401) {
+    // Refresh once, deduped across concurrent calls
+    if (!_refreshPromise) {
+      _refreshPromise = _tryRefresh().finally(() => { _refreshPromise = null })
+    }
+    const ok = await _refreshPromise
+    if (!ok) {
+      auth.clearTokens()
+      throw new Error('Session expired — please log in again')
+    }
+    // Retry with the new token
+    const retry = await fetch(`${BASE}${path}`, {
+      ...init,
+      headers: { ..._buildHeaders(auth.getToken()), ...init?.headers },
+    })
+    if (!retry.ok) {
+      const body = await retry.text().catch(() => retry.statusText)
+      throw new Error(`${retry.status}: ${body}`)
+    }
+    return retry.json() as Promise<T>
+  }
+
   if (!res.ok) {
     const body = await res.text().catch(() => res.statusText)
     throw new Error(`${res.status}: ${body}`)
@@ -47,10 +96,12 @@ export const api = {
   servers: {
     list: () => req<Server[]>('/servers'),
     create: (data: ServerCreate) => req<Server>('/servers', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: number, data: Partial<ServerCreate>) => req<Server>(`/servers/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
     remove: (id: number) => req<Server>(`/servers/${id}`, { method: 'DELETE' }),
   },
   jobs: {
     submit: (data: JobCreate) => req<Job>('/jobs', { method: 'POST', body: JSON.stringify(data) }),
+    list: (status?: string) => req<Job[]>(`/jobs${status ? `?status=${status}` : ''}`),
     get: (id: number) => req<Job>(`/jobs/${id}`),
     cancel: (id: number) => req<Job>(`/jobs/${id}`, { method: 'DELETE' }),
     approve: (id: number, status: 'approved' | 'rejected', comments?: string) =>
@@ -91,6 +142,10 @@ export const api = {
       req<RequestTemplate>('/request-templates', { method: 'POST', body: JSON.stringify(data) }),
     delete: (id: number) =>
       req<RequestTemplate>(`/request-templates/${id}`, { method: 'DELETE' }),
+  },
+  databases: {
+    query: (logId: number, sql: string) =>
+      req<QueryResult>(`/databases/${logId}/query`, { method: 'POST', body: JSON.stringify({ sql }) }),
   },
   admin: {
     seed: () => req<unknown>('/admin/seed', { method: 'POST' }),

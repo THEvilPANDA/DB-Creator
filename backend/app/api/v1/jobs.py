@@ -247,6 +247,22 @@ async def job_connection(
     }
 
 
+@router.get("", response_model=list[JobRead])
+async def list_jobs(
+    status: str | None = None,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    if not current_user.is_admin:
+        raise HTTPException(403, "Only admins can list all jobs")
+    q = select(Job).where(Job.is_deleted == False)  # noqa: E712
+    if status:
+        q = q.where(Job.status == status)
+    q = q.order_by(Job.created_at.desc()).limit(100)
+    result = await session.execute(q)
+    return result.scalars().all()
+
+
 @router.get("/{job_id}", response_model=JobRead)
 async def get_job(job_id: int, session: AsyncSession = Depends(get_session)):
     job = await session.get(Job, job_id)
