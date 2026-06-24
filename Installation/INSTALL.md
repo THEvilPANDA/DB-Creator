@@ -8,49 +8,48 @@ Enterprise PostgreSQL provisioning platform.
 
 ## Prerequisites
 
-| Tool | Minimum version | Notes |
-|------|----------------|-------|
-| Git | any | |
-| Docker Desktop | 4.x | Windows / Mac — Linux uses `docker.io` |
-| Python | 3.11+ | |
-| Node.js | 18+ | |
+| Tool | Notes |
+|------|-------|
+| Git | Any version |
+| Docker Desktop | Windows / Mac — get it from [docker.com](https://www.docker.com). Linux: `docker.io` + `docker-compose-plugin` via apt. |
 
-The setup script installs missing tools automatically (Windows via `winget`, Ubuntu via `apt`).
+That's it. Python and Node run inside Docker — you don't need them locally.
 
 ---
 
 ## Quick start (new machine)
 
-### 1 — Clone the repo
+### 1 — Clone
 
 ```bash
 git clone https://github.com/THEvilPANDA/DB-Creator.git
-cd db-creator
+cd DB-Creator
 ```
 
-### 2 — Run the setup script
+### 2 — Start Docker Desktop
+
+Open Docker Desktop and wait for the whale icon to appear in your taskbar/system tray before continuing.
+
+### 3 — Run the setup script
 
 **Windows (PowerShell):**
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\Installation\setup.ps1
 ```
 
-**Ubuntu / Linux:**
+**Linux / Mac:**
 ```bash
 bash Installation/setup.sh
 ```
 
-That's it. The script handles everything:
-- installs missing prerequisites
-- creates `backend/.env` with safe dev defaults
-- pulls and starts the Postgres + Redis Docker containers
-- creates a Python virtualenv and installs dependencies
-- runs all database migrations (`alembic upgrade head`)
-- installs Node dependencies (`npm install`)
-- starts the backend (port **8000**) and frontend (port **5173**) in separate terminal windows
-- seeds the database with default templates and an `admin` user
+The script:
+1. Creates `backend/.env` and `frontend/.env` with dev defaults (if missing)
+2. Checks that Docker is running
+3. Runs `docker compose up -d`
 
-### 3 — Open the app
+Docker pulls images and builds containers on the first run — this takes a few minutes. Subsequent starts are fast.
+
+### 4 — Open the app
 
 | | URL |
 |-|-----|
@@ -58,116 +57,138 @@ That's it. The script handles everything:
 | Backend API | http://localhost:8000 |
 | Swagger docs | http://localhost:8000/docs |
 
-**Default login:** `admin` / `admin123`  
-Change the password after first login.
+**Default login:** `admin` / `admin123`
 
 ---
 
 ## Day-to-day use
 
-Re-run the same script any time to start the app. It skips steps that are already done (migrations, npm install, venv creation).
+### Start
 
-**Windows:**
 ```powershell
+# Windows
 .\Installation\setup.ps1
+
+# Linux / Mac
+bash Installation/setup.sh
 ```
 
-**Ubuntu:**
+Or directly:
 ```bash
-bash Installation/setup.sh
+docker compose up -d
+```
+
+### Stop
+
+```powershell
+# Windows
+.\Installation\stop.ps1
+
+# Linux / Mac
+bash Installation/stop.sh
+```
+
+Or directly:
+```bash
+docker compose down
+```
+
+### Logs
+
+```bash
+docker compose logs -f           # all services
+docker compose logs -f api       # backend only
+docker compose logs -f frontend  # Vite only
+docker compose logs -f worker    # ARQ worker only
 ```
 
 ---
 
-## Stopping the app
+## Hot-reload
 
-**Windows:**
-```powershell
-.\Installation\stop.ps1
-```
+| Service | Reloads on save? |
+|---------|-----------------|
+| Backend (`api`) | Yes — uvicorn `--reload` watches `backend/` |
+| Frontend | Yes — Vite HMR |
+| Worker | **No** — run `docker compose restart worker` after changing worker code |
 
-**Ubuntu:**
+---
+
+## Monitoring (optional)
+
 ```bash
-bash Installation/stop.sh
+docker compose --profile monitoring up -d
 ```
+
+| | URL |
+|-|-----|
+| Prometheus | http://localhost:9090 |
+| Grafana | http://localhost:3001 (login: admin / admin) |
 
 ---
 
 ## Configuration
 
-`backend/.env` is created automatically on first run but **is not committed to git** (it contains secrets).  
-Copy it to new machines manually, or recreate it from the table below.
+`backend/.env` and `frontend/.env` are created automatically on first run and are gitignored. Copy them manually when moving to a new machine.
 
-| Variable | Default (dev) | Notes |
-|----------|--------------|-------|
-| `DATABASE_URL` | `postgresql+asyncpg://dbcreator:dbcreator@localhost:5432/dbcreator` | |
-| `REDIS_URL` | `redis://localhost:6379/0` | |
-| `FERNET_KEY` | *(generated)* | Keep this value stable — it encrypts stored credentials |
-| `ADMIN_KEY` | `dev-admin-key` | Header secret for `/admin/*` endpoints |
+| Variable | Default | Notes |
+|----------|---------|-------|
+| `DATABASE_URL` | `postgresql+asyncpg://dbcreator:dbcreator@localhost:5432/dbcreator` | Used for local dev only; Docker overrides this to `postgres:5432` internally |
+| `REDIS_URL` | `redis://localhost:6379/0` | Same — Docker overrides to `redis:6379` |
+| `FERNET_KEY` | *(static dev key)* | Keep stable — encrypts stored credentials |
+| `ADMIN_KEY` | `dev-admin-key` | Required header for `/admin/*` endpoints |
 | `JWT_SECRET` | `dev-jwt-secret-change-in-production` | **Change in production** |
-| `DEFAULT_ADMIN_PASSWORD` | `admin123` | Used by `/admin/seed` to create the first admin user |
+| `DEFAULT_ADMIN_PASSWORD` | `admin123` | Used by the seed service to create the first admin user |
+| `VITE_ADMIN_KEY` | `dev-admin-key` | Frontend header for admin-gated API calls |
 
 ---
 
-## Transferring to another PC
+## Transferring to another machine
 
-1. **Push your code** (if you haven't already):
-   ```bash
-   git remote add origin https://github.com/THEvilPANDA/DB-Creator.git
-   git push -u origin master
-   ```
-
-2. **On the new machine** — clone and run:
-   ```bash
-   git clone https://github.com/THEvilPANDA/DB-Creator.git
-   cd db-creator
-   # Copy backend/.env from the old machine (or recreate it)
-   powershell -ExecutionPolicy Bypass -File .\Installation\setup.ps1   # Windows
-   # bash Installation/setup.sh                                          # Ubuntu
-   ```
-
-3. **Bring existing data** (optional):
-   ```bash
-   # On OLD machine — export:
-   docker exec dbcreator-postgres-1 pg_dump -U dbcreator dbcreator > backup.sql
-
-   # On NEW machine — import (after containers are running):
-   docker exec -i dbcreator-postgres-1 psql -U dbcreator dbcreator < backup.sql
-   ```
-
----
-
-## Logs
-
-When started via the setup script, server logs are written to:
-
-```
-logs/backend.log
-logs/frontend.log
-```
-
-Tail them live:
 ```bash
-tail -f logs/backend.log
-tail -f logs/frontend.log
+# 1. Push your code
+git push
+
+# 2. On the new machine
+git clone https://github.com/THEvilPANDA/DB-Creator.git
+cd DB-Creator
+# Copy backend/.env and frontend/.env from the old machine (or let setup recreate defaults)
+powershell -ExecutionPolicy Bypass -File .\Installation\setup.ps1   # Windows
+# bash Installation/setup.sh                                          # Linux
+```
+
+To carry existing database data:
+```bash
+# On OLD machine — export
+docker exec db-creator-postgres-1 pg_dump -U dbcreator dbcreator > backup.sql
+
+# On NEW machine — import (after docker compose up)
+docker exec -i db-creator-postgres-1 psql -U dbcreator dbcreator < backup.sql
 ```
 
 ---
 
 ## Troubleshooting
 
-**Docker not starting on Windows**  
-Open Docker Desktop from the Start menu and wait for the whale icon in the system tray before re-running the script.
+**`docker compose up` fails on first run with a build error**  
+Check your internet connection — Docker needs to pull base images. Re-run after connecting.
 
-**Port already in use**  
-Run `stop.ps1` / `stop.sh` first, then re-run setup.
+**Port already in use (5173 or 8000)**  
+Stop whatever is using the port, then `docker compose down` and `docker compose up -d` again.
 
 **Migrations fail**  
-Ensure Postgres is healthy: `docker logs dbcreator-postgres-1`
+Check Postgres logs: `docker compose logs postgres`
 
-**`python3` resolves to the Microsoft Store stub**  
-Install Python from [python.org](https://python.org) or run:
-```powershell
-winget install Python.Python.3.11
+**Seed didn't create the admin user**  
+Re-run seed manually:
+```bash
+curl -X POST http://localhost:8000/api/v1/admin/seed \
+  -H "X-Admin-Key: dev-admin-key" \
+  -H "Content-Type: application/json"
 ```
-Then open a fresh terminal before re-running setup.
+
+**Backend changes aren't hot-reloading**  
+Confirm the `api` container has the volume mount: `docker compose ps` → `api` should be running. If you edited files outside `backend/`, those changes aren't mounted.
+
+**Worker not picking up jobs**  
+Check worker logs: `docker compose logs -f worker`. If you changed worker code, run `docker compose restart worker`.

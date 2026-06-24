@@ -4,58 +4,49 @@ Enterprise API-first PostgreSQL provisioning platform.
 
 ## Quick Start
 
-### Prerequisites
+**Prerequisite:** [Docker Desktop](https://www.docker.com) (includes Docker Compose). Python and Node are not required locally — they run inside containers.
 
-- Docker + Docker Compose
-- Python 3.11+
-- Node.js 18+
+### 1. Clone
 
-### 1. Start infrastructure
+```bash
+git clone https://github.com/THEvilPANDA/DB-Creator.git
+cd DB-Creator
+```
 
+### 2. Start
+
+**Windows:**
+```powershell
+powershell -ExecutionPolicy Bypass -File .\Installation\setup.ps1
+```
+
+**Linux / Mac:**
+```bash
+bash Installation/setup.sh
+```
+
+Or, if `.env` files already exist:
 ```bash
 docker compose up -d
 ```
 
-This starts PostgreSQL 16 (port 5432) and Redis 7 (port 6379).
+First run builds Docker images — takes a few minutes. Subsequent starts are instant.
 
-### 2. Backend
+### 3. Open
 
-```bash
-cd backend
+| | URL |
+|-|-----|
+| Frontend | http://localhost:5173 |
+| API | http://localhost:8000 |
+| Swagger | http://localhost:8000/docs |
 
-# Install dependencies
-pip install -r requirements.txt
+**Login:** `admin` / `admin123`
 
-# Copy and configure env
-cp .env.example .env
-
-# Apply migrations
-alembic upgrade head
-
-# Start API server
-uvicorn app.main:app --reload
-```
-
-- API: http://localhost:8000
-- OpenAPI docs: http://localhost:8000/docs
-- Health check: http://localhost:8000/health
-
-### 3. Arq worker
+### Stop
 
 ```bash
-cd backend
-arq app.workers.worker.WorkerSettings
+docker compose down
 ```
-
-### 4. Frontend
-
-```bash
-cd frontend
-npm install
-npm run dev
-```
-
-- UI: http://localhost:5173
 
 ---
 
