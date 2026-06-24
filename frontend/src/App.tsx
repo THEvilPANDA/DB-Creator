@@ -1,8 +1,10 @@
 import { useState } from 'react'
 import Dashboard from './pages/Dashboard'
 import Jobs from './pages/Jobs'
+import Login from './pages/Login'
 import Servers from './pages/Servers'
 import Settings from './pages/Settings'
+import { auth } from './api'
 
 type Page = 'dashboard' | 'servers' | 'jobs' | 'settings'
 
@@ -14,7 +16,17 @@ const NAV: { id: Page; label: string; icon: string }[] = [
 ]
 
 export default function App() {
+  const [authenticated, setAuthenticated] = useState(auth.isAuthenticated())
   const [page, setPage] = useState<Page>('dashboard')
+
+  if (!authenticated) {
+    return <Login onAuthenticated={() => setAuthenticated(true)} />
+  }
+
+  function handleLogout() {
+    auth.clearTokens()
+    setAuthenticated(false)
+  }
 
   return (
     <>
@@ -34,6 +46,17 @@ export default function App() {
               {n.label}
             </button>
           ))}
+        </div>
+        <div style={{ padding: '1rem 0.75rem', borderTop: '1px solid var(--border)' }}>
+          <button
+            onClick={handleLogout}
+            style={{
+              width: '100%', padding: '6px 10px', borderRadius: 4, border: '1px solid var(--border)',
+              background: 'transparent', color: 'var(--text-muted)', cursor: 'pointer', fontSize: 12,
+            }}
+          >
+            Sign Out
+          </button>
         </div>
       </nav>
       <main className="main">

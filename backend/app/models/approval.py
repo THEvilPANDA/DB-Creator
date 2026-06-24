@@ -1,11 +1,11 @@
-from datetime import datetime, timezone
+﻿from datetime import datetime, timezone
 from typing import Optional
 
 from sqlmodel import Field, SQLModel
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class ApprovalRequest(SQLModel, table=True):
@@ -20,3 +20,4 @@ class ApprovalRequest(SQLModel, table=True):
 
     created_at: datetime = Field(default_factory=_utcnow)
     updated_at: Optional[datetime] = Field(default=None)
+

@@ -7,10 +7,28 @@ import type {
 const BASE = import.meta.env.VITE_API_URL ?? '/api/v1'
 const ADMIN_KEY = import.meta.env.VITE_ADMIN_KEY ?? ''
 
+const TOKEN_KEY = 'dbcreator_access_token'
+const REFRESH_KEY = 'dbcreator_refresh_token'
+
+export const auth = {
+  getToken: () => localStorage.getItem(TOKEN_KEY),
+  setTokens: (access: string, refresh: string) => {
+    localStorage.setItem(TOKEN_KEY, access)
+    localStorage.setItem(REFRESH_KEY, refresh)
+  },
+  clearTokens: () => {
+    localStorage.removeItem(TOKEN_KEY)
+    localStorage.removeItem(REFRESH_KEY)
+  },
+  isAuthenticated: () => !!localStorage.getItem(TOKEN_KEY),
+}
+
 async function req<T>(path: string, init?: RequestInit): Promise<T> {
+  const token = auth.getToken()
   const adminHeaders: Record<string, string> = ADMIN_KEY ? { 'X-Admin-Key': ADMIN_KEY } : {}
+  const authHeaders: Record<string, string> = token ? { Authorization: `Bearer ${token}` } : {}
   const res = await fetch(`${BASE}${path}`, {
-    headers: { 'Content-Type': 'application/json', ...adminHeaders, ...init?.headers },
+    headers: { 'Content-Type': 'application/json', ...adminHeaders, ...authHeaders, ...init?.headers },
     ...init,
   })
   if (!res.ok) {
@@ -82,5 +100,16 @@ export const api = {
         method: 'PUT',
         body: JSON.stringify({ auto_approved_environments: envs }),
       }),
+  },
+  authApi: {
+    login: (username: string, password: string) =>
+      req<{ access_token: string; refresh_token: string; token_type: string }>(
+        '/auth/login', { method: 'POST', body: JSON.stringify({ username, password }) }
+      ),
+    register: (username: string, email: string, password: string) =>
+      req<{ id: number; username: string; email: string; is_admin: boolean; is_active: boolean }>(
+        '/auth/register', { method: 'POST', body: JSON.stringify({ username, email, password }) }
+      ),
+    me: () => req<{ id: number; username: string; email: string; is_admin: boolean; is_active: boolean }>('/auth/me'),
   },
 }

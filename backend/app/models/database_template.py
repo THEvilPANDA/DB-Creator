@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+﻿from datetime import datetime, timezone
 from typing import Optional
 
 import sqlalchemy as sa
@@ -6,7 +6,7 @@ from sqlmodel import Field, SQLModel
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class DatabaseTemplate(SQLModel, table=True):
@@ -33,3 +33,4 @@ class DatabaseTemplate(SQLModel, table=True):
     is_deleted: bool = Field(default=False)
     deleted_at: Optional[datetime] = Field(default=None)
     deleted_by: Optional[str] = Field(default=None, max_length=255)
+

@@ -2,13 +2,14 @@ import asyncio
 import json
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Request
 from fastapi.responses import StreamingResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.database import AsyncSessionLocal, get_session
-from app.dependencies import get_arq
+from app.dependencies import get_arq, get_current_user, get_optional_user
+from app.models.user import User
 from app.models.approval import ApprovalRequest
 from app.models.creation_log import CreationLog
 from app.models.job import Job
@@ -56,6 +57,7 @@ async def submit_job(
     payload: JobCreate,
     session: AsyncSession = Depends(get_session),
     arq=Depends(get_arq),
+    current_user: User | None = Depends(get_optional_user),
 ):
     p = payload.model_dump()
 
@@ -127,10 +129,11 @@ async def submit_job(
         db_name = p.get("db_name") or f"db_{int(datetime.now(timezone.utc).timestamp())}"
 
     # ── 5. Create Job + ApprovalRequest ─────────────────────────────────────────
+    owner = p.get("owner") or (current_user.username if current_user else "")
     job = Job(
         db_name=db_name,
         environment=p.get("environment", "development"),
-        owner=p.get("owner", ""),
+        owner=owner,
         team=p.get("team"),
         cost_center=p.get("cost_center"),
         server_id=target_server.id if target_server else p.get("server_id"),
@@ -200,15 +203,19 @@ async def job_events(job_id: int):
 
 
 @router.get("/{job_id}/connection")
-async def job_connection(job_id: int, session: AsyncSession = Depends(get_session)):
-    """Return connection details and IaC snippets for a successfully provisioned job.
-
-    SECURITY (Phase 7): restrict to authenticated owner or admin via get_current_user.
-    Currently unprotected — deploy behind a network boundary until auth is added.
-    """
+async def job_connection(
+    job_id: int,
+    session: AsyncSession = Depends(get_session),
+    current_user: User = Depends(get_current_user),
+):
+    """Return connection details for a provisioned job (owner or admin only)."""
     job = await session.get(Job, job_id)
     if not job or job.is_deleted:
         raise HTTPException(404, "Job not found")
+
+    if not current_user.is_admin and job.owner != current_user.username:
+        raise HTTPException(403, "Access denied: not the job owner")
+
     if job.status != "succeeded":
         raise HTTPException(409, f"Job is not succeeded (status: {job.status})")
 
@@ -219,7 +226,7 @@ async def job_connection(job_id: int, session: AsyncSession = Depends(get_sessio
     if not log:
         raise HTTPException(404, "Connection details not yet available")
 
-    await write_audit(session, actor="system", action="job.connection_accessed",
+    await write_audit(session, actor=current_user.username, action="job.connection_accessed",
                       entity_type="job", entity_id=job_id,
                       payload={"db_name": log.db_name, "db_user": log.db_user})
     await session.commit()
@@ -273,6 +280,7 @@ async def decide_approval(
     payload: ApprovalDecide,
     session: AsyncSession = Depends(get_session),
     arq=Depends(get_arq),
+    current_user: User = Depends(get_current_user),
 ):
     result = await session.execute(
         select(ApprovalRequest).where(ApprovalRequest.job_id == job_id)
@@ -283,12 +291,14 @@ async def decide_approval(
     if approval.status != "pending":
         raise HTTPException(400, f"Approval already decided: {approval.status}")
 
+    if not current_user.is_admin:
+        raise HTTPException(403, "Only admins can approve jobs")
     approval.status = payload.status
-    approval.approver = "system"  # Phase 7: replace with authenticated principal
+    approval.approver = current_user.username
     approval.comments = payload.comments
     approval.decided_at = datetime.now(timezone.utc)
     session.add(approval)
-    await write_audit(session, actor="system", action=f"approval.{payload.status}",
+    await write_audit(session, actor=current_user.username, action=f"approval.{payload.status}",
                       entity_type="job", entity_id=job_id,
                       payload={"approval_id": approval.id, "comments": payload.comments})
 

@@ -15,7 +15,9 @@ from app.config import settings
 from app.database import get_session
 from app.models.database_template import DatabaseTemplate
 from app.models.naming_profile import NamingProfile
+from app.models.user import User
 from app.services.approval import get_auto_approved_environments, set_auto_approved_environments
+from app.services.auth import hash_password
 
 logger = logging.getLogger(__name__)
 
@@ -103,18 +105,16 @@ async def seed_defaults(
     _: None = Depends(require_admin_key),
 ):
     """Idempotently seed standard database templates and naming profiles."""
-    existing_tmpl = {
-        r.name
-        for r in (await session.execute(
+    existing_tmpl = set(
+        (await session.execute(
             select(DatabaseTemplate.name).where(DatabaseTemplate.is_deleted == False)  # noqa: E712
-        )).scalars()
-    }
-    existing_np = {
-        r.name
-        for r in (await session.execute(
+        )).scalars().all()
+    )
+    existing_np = set(
+        (await session.execute(
             select(NamingProfile.name).where(NamingProfile.is_deleted == False)  # noqa: E712
-        )).scalars()
-    }
+        )).scalars().all()
+    )
 
     created_templates: list[str] = []
     for spec in _DB_TEMPLATES:
@@ -128,6 +128,19 @@ async def seed_defaults(
             session.add(NamingProfile(**spec))
             created_profiles.append(spec["name"])
 
+    # Seed default admin user if password configured and no users exist
+    admin_created = False
+    if settings.DEFAULT_ADMIN_PASSWORD:
+        user_count = (await session.execute(select(User))).scalars().first()
+        if not user_count:
+            session.add(User(
+                username="admin",
+                email="admin@localhost",
+                password_hash=hash_password(settings.DEFAULT_ADMIN_PASSWORD),
+                is_admin=True,
+            ))
+            admin_created = True
+
     await session.commit()
 
     return {
@@ -135,6 +148,7 @@ async def seed_defaults(
         "naming_profiles_created": created_profiles,
         "skipped_templates": [s["name"] for s in _DB_TEMPLATES if s["name"] not in created_templates],
         "skipped_profiles": [s["name"] for s in _NAMING_PROFILES if s["name"] not in created_profiles],
+        "admin_created": admin_created,
     }
 
 

@@ -6,6 +6,7 @@ from app.models.job import Job
 from app.models.naming_profile import NamingProfile
 from app.models.request_template import RequestTemplate
 from app.models.server import Server
+from app.models.user import User
 
 __all__ = [
     "Server",
@@ -16,4 +17,5 @@ __all__ = [
     "ApprovalRequest",
     "CreationLog",
     "AuditLog",
+    "User",
 ]

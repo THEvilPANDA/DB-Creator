@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+﻿from datetime import datetime, timezone
 from typing import Optional
 
 import sqlalchemy as sa
@@ -6,7 +6,7 @@ from sqlmodel import Field, SQLModel
 
 
 def _utcnow() -> datetime:
-    return datetime.now(timezone.utc)
+    return datetime.now(timezone.utc).replace(tzinfo=None)
 
 
 class AuditLog(SQLModel, table=True):
@@ -20,3 +20,4 @@ class AuditLog(SQLModel, table=True):
     payload: Optional[dict] = Field(default=None, sa_column=sa.Column(sa.JSON))
     ip_address: Optional[str] = Field(default=None, max_length=45)
     created_at: datetime = Field(default_factory=_utcnow)
+
