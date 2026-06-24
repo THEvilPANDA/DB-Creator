@@ -45,7 +45,7 @@ async def provision_database(ctx: dict, job_id: int) -> dict:
         # Mark running
         _start = time.monotonic()
         job.status = "running"
-        job.started_at = datetime.now(timezone.utc)
+        job.started_at = datetime.now(timezone.utc).replace(tzinfo=None)
         session.add(job)
         await write_audit(session, actor="worker", action="provision.start", entity_type="job",
                           entity_id=job_id, payload={"server_id": server.id})
@@ -61,7 +61,7 @@ async def provision_database(ctx: dict, job_id: int) -> dict:
             )
 
             extensions: list[str] = db_template.extensions if db_template else []
-            privileges: list[str] = ["CONNECT", "USAGE", "CREATE"]
+            privileges: list[str] = ["CONNECT", "CREATE"]
             if db_template and db_template.permissions:
                 app_privs = db_template.permissions.get("app_user")
                 if app_privs:
@@ -114,7 +114,7 @@ async def provision_database(ctx: dict, job_id: int) -> dict:
                     host=server.host,
                     port=server.port,
                 ),
-                provisioned_at=datetime.now(timezone.utc),
+                provisioned_at=datetime.now(timezone.utc).replace(tzinfo=None),
             )
             session.add(log)
 
@@ -123,7 +123,7 @@ async def provision_database(ctx: dict, job_id: int) -> dict:
             JOBS_COMPLETED.labels(status="succeeded", environment=job.environment).inc()
 
             job.status = "succeeded"
-            job.completed_at = datetime.now(timezone.utc)
+            job.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
             session.add(job)
             await write_audit(session, actor="worker", action="provision.complete", entity_type="job",
                               entity_id=job_id, payload={"db_name": job.db_name, "db_user": db_user,
@@ -148,7 +148,7 @@ async def provision_database(ctx: dict, job_id: int) -> dict:
 async def _fail(session, job: Job, message: str) -> None:
     job.status = "failed"
     job.error_message = message
-    job.completed_at = datetime.now(timezone.utc)
+    job.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
     session.add(job)
     await write_audit(session, actor="worker", action="provision.fail", entity_type="job",
                       entity_id=job.id, payload={"error": message[:500]})

@@ -60,6 +60,8 @@ class CapacityMetrics:
 
     @property
     def health(self) -> str:
+        if self.disk_free_gb == 0:
+            return "healthy"
         total = self.disk_used_gb + self.disk_free_gb
         if total == 0:
             return "healthy"

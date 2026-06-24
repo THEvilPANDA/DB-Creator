@@ -151,7 +151,7 @@ async def submit_job(
         job_id=job.id,
         status="approved" if auto_approved else "pending",
         approver="system" if auto_approved else None,
-        decided_at=datetime.now(timezone.utc) if auto_approved else None,
+        decided_at=datetime.now(timezone.utc).replace(tzinfo=None) if auto_approved else None,
     )
     session.add(approval)
     if auto_approved:
@@ -296,7 +296,7 @@ async def decide_approval(
     approval.status = payload.status
     approval.approver = current_user.username
     approval.comments = payload.comments
-    approval.decided_at = datetime.now(timezone.utc)
+    approval.decided_at = datetime.now(timezone.utc).replace(tzinfo=None)
     session.add(approval)
     await write_audit(session, actor=current_user.username, action=f"approval.{payload.status}",
                       entity_type="job", entity_id=job_id,

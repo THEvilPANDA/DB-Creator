@@ -21,7 +21,9 @@ async def lifespan(app: FastAPI):
         from arq.connections import RedisSettings
 
         app.state.arq = await create_pool(RedisSettings.from_dsn(settings.REDIS_URL))
-    except Exception:
+        print(f"[ARQ] Redis pool connected: {settings.REDIS_URL}")
+    except Exception as e:
+        print(f"[ARQ] Failed to connect to Redis, job enqueueing disabled: {e}")
         app.state.arq = None  # worker won't function, but API still serves
 
     yield

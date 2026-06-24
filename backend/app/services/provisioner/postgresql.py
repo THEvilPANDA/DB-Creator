@@ -15,7 +15,7 @@ from app.services.provisioner.base import (
 _IDENTIFIER_RE = re.compile(r"^[a-zA-Z_][a-zA-Z0-9_]{0,62}$")
 
 _ALLOWED_PRIVILEGES = frozenset(
-    {"CONNECT", "TEMPORARY", "TEMP", "CREATE", "USAGE", "ALL"}
+    {"CONNECT", "TEMPORARY", "TEMP", "CREATE", "ALL"}
 )
 
 _ALLOWED_EXTENSIONS = frozenset(
@@ -81,8 +81,14 @@ class PostgreSQLProvisioner(DatabaseProvisioner):
         conn = await self._connect()
         try:
             user = _quote_identifier(spec.username)
-            await conn.execute(f"CREATE USER {user}")
-            await conn.execute(f"ALTER USER {user} PASSWORD $1", spec.password)
+            escaped_password = spec.password.replace("'", "''")
+            role_exists = await conn.fetchval(
+                "SELECT 1 FROM pg_roles WHERE rolname = $1", spec.username
+            )
+            if role_exists:
+                await conn.execute(f"ALTER USER {user} WITH PASSWORD '{escaped_password}'")
+            else:
+                await conn.execute(f"CREATE USER {user} WITH PASSWORD '{escaped_password}'")
             return UserResult(username=spec.username, success=True)
         except Exception as exc:
             return UserResult(username=spec.username, success=False, message=str(exc))
