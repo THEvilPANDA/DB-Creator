@@ -125,6 +125,9 @@ async def _run_qdrant_query(base_url: str, api_key: Optional[str], payload_str: 
                              error=f"Invalid JSON: {exc}. Format: {{\"op\":\"list\"}} or {{\"op\":\"info\",\"coll\":\"name\"}}")
     op = payload.get("op", "list")
     coll = payload.get("coll", "")
+    if coll and not re.fullmatch(r"[a-zA-Z0-9_-]{1,128}", coll):
+        return QueryResponse(columns=[], rows=[], row_count=0,
+                             error=f"Invalid collection name: {coll!r}")
     headers: dict[str, str] = {}
     if api_key:
         headers["api-key"] = api_key
@@ -213,7 +216,7 @@ async def query_database(
             # Inject db_name so _run_mongodb_query can use it
             try:
                 d = json.loads(payload.sql)
-                d.setdefault("db", log.db_name)
+                d["db"] = log.db_name
                 payload_with_db = json.dumps(d)
             except json.JSONDecodeError:
                 pass

@@ -1,8 +1,6 @@
 import secrets
 import time
 from datetime import datetime, timezone
-from urllib.parse import urlparse
-
 from app.database import AsyncSessionLocal
 from app.metrics import JOBS_COMPLETED, PROVISION_DURATION
 from app.models.creation_log import CreationLog
