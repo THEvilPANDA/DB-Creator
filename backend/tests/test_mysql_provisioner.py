@@ -76,8 +76,13 @@ async def test_mysql_create_user_success():
     p = _provisioner()
     mock_conn, mock_cur = _mock_conn_with_cursor(fetchone_return=None)  # user doesn't exist
     with patch.object(p, "_connect", new=AsyncMock(return_value=mock_conn)):
-        result = await p.create_user(UserSpec(username="alice", password="pw", db_name="mydb"))
+        result = await p.create_user(UserSpec(username="alice", password="tr1cky\\'pw", db_name="mydb"))
     assert result.success is True
+    # The CREATE USER call must pass the password as a parameter tuple, never interpolated
+    create_call = mock_cur.execute.call_args_list[-1]
+    sql, params = create_call.args
+    assert "IDENTIFIED BY %s" in sql, "password must be a %s placeholder"
+    assert params == ("tr1cky\\'pw",), "password must be passed as a parameter, not interpolated"
 
 
 @pytest.mark.asyncio

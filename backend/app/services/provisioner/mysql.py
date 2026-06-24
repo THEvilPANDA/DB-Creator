@@ -61,10 +61,10 @@ class MySQLProvisioner(DatabaseProvisioner):
             conn.close()
 
     async def create_database(self, spec: DatabaseSpec) -> DatabaseResult:
+        _validate_identifier(spec.name)
         if await self.database_exists(spec.name):
             return DatabaseResult(db_name=spec.name, success=False,
                                   message=f"Database '{spec.name}' already exists")
-        _validate_identifier(spec.name)
         conn = await self._connect()
         try:
             async with conn.cursor() as cur:
@@ -79,7 +79,7 @@ class MySQLProvisioner(DatabaseProvisioner):
 
     async def create_user(self, spec: UserSpec) -> UserResult:
         _validate_identifier(spec.username)
-        escaped_pw = spec.password.replace("'", "''")
+        user = f"`{spec.username}`"
         conn = await self._connect()
         try:
             async with conn.cursor() as cur:
@@ -89,11 +89,13 @@ class MySQLProvisioner(DatabaseProvisioner):
                 exists = await cur.fetchone()
                 if exists:
                     await cur.execute(
-                        f"ALTER USER '{spec.username}'@'%%' IDENTIFIED BY '{escaped_pw}'"
+                        f"ALTER USER {user}@'%%' IDENTIFIED BY %s",
+                        (spec.password,)
                     )
                 else:
                     await cur.execute(
-                        f"CREATE USER '{spec.username}'@'%%' IDENTIFIED BY '{escaped_pw}'"
+                        f"CREATE USER {user}@'%%' IDENTIFIED BY %s",
+                        (spec.password,)
                     )
             return UserResult(username=spec.username, success=True)
         except Exception as exc:
