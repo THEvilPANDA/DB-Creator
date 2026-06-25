@@ -9,7 +9,7 @@ from app.database import get_session
 from app.main import app
 
 
-@pytest.fixture(scope="session")
+@pytest.fixture(scope="function")
 async def test_engine():
     engine = create_async_engine(settings.TEST_DATABASE_URL, echo=False)
     async with engine.begin() as conn:
@@ -18,6 +18,8 @@ async def test_engine():
     async with engine.begin() as conn:
         await conn.run_sync(SQLModel.metadata.drop_all)
     await engine.dispose()
+
+
 
 
 @pytest.fixture
@@ -29,11 +31,18 @@ async def db_session(test_engine):
 
 
 @pytest.fixture
-async def client(db_session):
-    async def override_get_session():
-        yield db_session
+async def client(test_engine):
+    """Client fixture for async tests."""
+    AsyncTestSession = async_sessionmaker(test_engine, expire_on_commit=False)
+    session = AsyncTestSession()
+    try:
+        async def override_get_session():
+            yield session
 
-    app.dependency_overrides[get_session] = override_get_session
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-        yield c
-    app.dependency_overrides.clear()
+        app.dependency_overrides[get_session] = override_get_session
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+            yield c
+    finally:
+        app.dependency_overrides.clear()
+        await session.rollback()
+        await session.close()
