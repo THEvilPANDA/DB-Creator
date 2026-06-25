@@ -48,6 +48,19 @@ First run builds Docker images — takes a few minutes. Subsequent starts are in
 docker compose down
 ```
 
+### Optional: Monitoring (Prometheus + Grafana)
+
+```bash
+docker compose --profile monitoring up -d
+```
+
+| | URL |
+|-|-----|
+| Grafana | http://localhost:3001 |
+| Prometheus | http://localhost:9090 |
+
+**Grafana login:** `admin` / `admin` — a pre-built dashboard for DB Creator loads automatically.
+
 ---
 
 ## Development
