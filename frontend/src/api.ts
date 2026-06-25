@@ -1,7 +1,9 @@
 import type {
   ApprovalPolicy, CreationLog, DBTemplate, DBTemplateCreate,
-  HealthCheck, Job, JobCreate, NamingProfile, NamingProfileCreate,
-  Paginated, QueryResult, RequestTemplate, RequestTemplateCreate, Server, ServerCreate, Stats,
+  EngineDetectionResult, HealthCheck, Job, JobCreate, Machine, MachineCreate,
+  NamingProfile, NamingProfileCreate,
+  Paginated, QueryResult, RequestTemplate, RequestTemplateCreate,
+  ScanResult, Server, ServerCreate, SSHKey, SSHKeyCreate, Stats,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api/v1'
@@ -166,5 +168,27 @@ export const api = {
         '/auth/register', { method: 'POST', body: JSON.stringify({ username, email, password }) }
       ),
     me: () => req<{ id: number; username: string; email: string; is_admin: boolean; is_active: boolean }>('/auth/me'),
+  },
+  sshKeys: {
+    list: () => req<SSHKey[]>('/ssh-keys'),
+    create: (data: SSHKeyCreate) =>
+      req<SSHKey>('/ssh-keys', { method: 'POST', body: JSON.stringify(data) }),
+    delete: (id: number) =>
+      req<SSHKey>(`/ssh-keys/${id}`, { method: 'DELETE' }),
+  },
+  machines: {
+    list: () => req<Machine[]>('/machines'),
+    create: (data: MachineCreate) =>
+      req<Machine>('/machines', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: number, data: Partial<MachineCreate>) =>
+      req<Machine>(`/machines/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    delete: (id: number) =>
+      req<Machine>(`/machines/${id}`, { method: 'DELETE' }),
+    check: (id: number) =>
+      req<Machine>(`/machines/${id}/check`, { method: 'POST' }),
+    detectEngines: (id: number) =>
+      req<EngineDetectionResult[]>(`/machines/${id}/detect-engines`, { method: 'POST' }),
+    scan: (data: { cidr: string; method: string }) =>
+      req<ScanResult[]>('/machines/scan', { method: 'POST', body: JSON.stringify(data) }),
   },
 }

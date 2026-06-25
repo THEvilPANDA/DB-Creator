@@ -13,6 +13,7 @@ export interface Server {
   critical_threshold_pct: number
   has_admin_dsn: boolean
   has_api_key: boolean
+  machine_id: number | null
   created_at: string
   is_deleted: boolean
 }
@@ -30,6 +31,7 @@ export interface ServerCreate {
   critical_threshold_pct: number
   admin_dsn?: string
   api_key?: string
+  machine_id?: number | null
 }
 
 export interface Job {
@@ -165,4 +167,52 @@ export interface Stats {
   }
   servers: { total: number; active: number }
   history: { total_provisioned: number }
+}
+
+export interface SSHKey {
+  id: number
+  name: string
+  username: string
+  created_at: string
+}
+
+export interface SSHKeyCreate {
+  name: string
+  username: string
+  private_key: string
+  passphrase?: string
+}
+
+export interface Machine {
+  id: number
+  ip: string
+  hostname: string | null
+  label: string | null
+  ssh_port: number
+  ssh_key_id: number
+  os_info: string | null
+  host_fingerprint: string | null
+  status: string
+  last_checked_at: string | null
+  created_at: string
+  is_deleted: boolean
+}
+
+export interface MachineCreate {
+  ip: string
+  ssh_port?: number
+  ssh_key_id: number
+  label?: string
+}
+
+export interface ScanResult {
+  ip: string
+  ping_ok: boolean
+  ssh_open: boolean
+}
+
+export interface EngineDetectionResult {
+  port: number
+  engine: string
+  open: boolean
 }
