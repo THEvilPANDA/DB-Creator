@@ -19,9 +19,6 @@ async def test_rejects_invalid_cidr():
 async def test_port22_scan_finds_open_hosts():
     async def fake_open_connection(ip, port, **kwargs):
         if ip == "192.168.1.1":
-            mock = MagicMock()
-            mock.__aenter__ = AsyncMock(return_value=(MagicMock(), MagicMock()))
-            mock.__aexit__ = AsyncMock(return_value=None)
             reader, writer = MagicMock(), MagicMock()
             writer.close = MagicMock()
             return reader, writer

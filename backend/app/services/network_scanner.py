@@ -31,7 +31,7 @@ def _validate_cidr(cidr: str) -> ipaddress.IPv4Network | ipaddress.IPv6Network:
         raise NetworkScanError(f"Invalid CIDR: {cidr!r}")
     for private in _PRIVATE_NETWORKS:
         try:
-            if network.subnet_of(private) or network.overlaps(private):
+            if network.subnet_of(private):
                 return network
         except TypeError:
             continue
@@ -88,8 +88,9 @@ async def detect_db_engines(
     """Probe each known DB port on `ip` and return detection results."""
     if sem is None:
         sem = asyncio.Semaphore(10)
-    results = []
-    for port, engine in _ENGINE_BY_PORT.items():
+
+    async def _probe(port: int, engine: str) -> dict:
         is_open = await _check_port(ip, port, sem)
-        results.append({"port": port, "engine": engine, "open": is_open})
-    return results
+        return {"port": port, "engine": engine, "open": is_open}
+
+    return list(await asyncio.gather(*(_probe(p, e) for p, e in _ENGINE_BY_PORT.items())))
