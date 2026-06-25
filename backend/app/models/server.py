@@ -36,6 +36,10 @@ class Server(SQLModel, table=True):
     # WARNING: store encrypted in production (see backlog: Fernet encryption).
     admin_dsn: Optional[str] = Field(default=None, sa_column=sa.Column(sa.Text, nullable=True))
     api_key: Optional[str] = Field(default=None, sa_column=sa.Column(sa.Text, nullable=True))
+    machine_id: Optional[int] = Field(
+        default=None,
+        sa_column=sa.Column(sa.Integer, sa.ForeignKey("machines.id"), nullable=True),
+    )
 
     is_deleted: bool = Field(default=False)
     deleted_at: Optional[datetime] = Field(default=None)
