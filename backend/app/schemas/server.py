@@ -18,6 +18,7 @@ class ServerCreate(BaseModel):
     critical_threshold_pct: float = 90.0
     admin_dsn: Optional[str] = None
     api_key: Optional[str] = None
+    machine_id: Optional[int] = None
 
 
 class ServerUpdate(BaseModel):
@@ -31,6 +32,7 @@ class ServerUpdate(BaseModel):
     critical_threshold_pct: Optional[float] = None
     admin_dsn: Optional[str] = None
     api_key: Optional[str] = None
+    machine_id: Optional[int] = None
 
 
 class ServerRead(BaseModel):
@@ -50,6 +52,7 @@ class ServerRead(BaseModel):
     critical_threshold_pct: float
     has_admin_dsn: bool = False
     has_api_key: bool = False
+    machine_id: Optional[int] = None
     created_at: datetime
     is_deleted: bool
 
