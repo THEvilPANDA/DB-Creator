@@ -6,9 +6,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.database import get_session
+from app.dependencies import require_admin
 from app.models.machine import Machine
 from app.models.server import Server
 from app.models.ssh_key import SSHKey
+from app.models.user import User
 from app.schemas.machine import (
     EngineDetectionResult,
     MachineCreate,
@@ -18,7 +20,7 @@ from app.schemas.machine import (
     ScanResult,
 )
 from app.services.encryption import decrypt
-from app.services.network_scanner import NetworkScanError, detect_db_engines, scan
+from app.services.network_scanner import NetworkScanError, detect_db_engines_via_ssh, scan
 from app.services.ssh_tunnel import open_ssh
 
 router = APIRouter(prefix="/machines", tags=["machines"])
@@ -37,6 +39,7 @@ async def _get_key_material(session: AsyncSession, machine: Machine) -> tuple[st
 async def create_machine(
     payload: MachineCreate,
     session: AsyncSession = Depends(get_session),
+    _: "User" = Depends(require_admin),
 ):
     machine = Machine(**payload.model_dump())
     session.add(machine)
@@ -46,7 +49,10 @@ async def create_machine(
 
 
 @router.get("", response_model=list[MachineRead])
-async def list_machines(session: AsyncSession = Depends(get_session)):
+async def list_machines(
+    session: AsyncSession = Depends(get_session),
+    _: "User" = Depends(require_admin),
+):
     result = await session.execute(
         select(Machine).where(Machine.is_deleted == False)  # noqa: E712
     )
@@ -54,7 +60,11 @@ async def list_machines(session: AsyncSession = Depends(get_session)):
 
 
 @router.get("/{machine_id}", response_model=MachineRead)
-async def get_machine(machine_id: int, session: AsyncSession = Depends(get_session)):
+async def get_machine(
+    machine_id: int,
+    session: AsyncSession = Depends(get_session),
+    _: "User" = Depends(require_admin),
+):
     machine = await session.get(Machine, machine_id)
     if not machine or machine.is_deleted:
         raise HTTPException(status_code=404, detail="Machine not found")
@@ -66,6 +76,7 @@ async def update_machine(
     machine_id: int,
     payload: MachineUpdate,
     session: AsyncSession = Depends(get_session),
+    _: "User" = Depends(require_admin),
 ):
     machine = await session.get(Machine, machine_id)
     if not machine or machine.is_deleted:
@@ -79,7 +90,11 @@ async def update_machine(
 
 
 @router.delete("/{machine_id}", response_model=MachineRead)
-async def delete_machine(machine_id: int, session: AsyncSession = Depends(get_session)):
+async def delete_machine(
+    machine_id: int,
+    session: AsyncSession = Depends(get_session),
+    _: "User" = Depends(require_admin),
+):
     machine = await session.get(Machine, machine_id)
     if not machine or machine.is_deleted:
         raise HTTPException(status_code=404, detail="Machine not found")
@@ -97,7 +112,10 @@ async def delete_machine(machine_id: int, session: AsyncSession = Depends(get_se
 
 
 @router.post("/scan", response_model=list[ScanResult])
-async def scan_network(payload: ScanRequest):
+async def scan_network(
+    payload: ScanRequest,
+    _: "User" = Depends(require_admin),
+):
     try:
         results = await scan(payload.cidr, payload.method)
     except NetworkScanError as exc:
@@ -106,7 +124,11 @@ async def scan_network(payload: ScanRequest):
 
 
 @router.post("/{machine_id}/check", response_model=MachineRead)
-async def check_machine(machine_id: int, session: AsyncSession = Depends(get_session)):
+async def check_machine(
+    machine_id: int,
+    session: AsyncSession = Depends(get_session),
+    _: "User" = Depends(require_admin),
+):
     machine = await session.get(Machine, machine_id)
     if not machine or machine.is_deleted:
         raise HTTPException(status_code=404, detail="Machine not found")
@@ -137,9 +159,21 @@ async def check_machine(machine_id: int, session: AsyncSession = Depends(get_ses
 
 
 @router.post("/{machine_id}/detect-engines", response_model=list[EngineDetectionResult])
-async def detect_engines(machine_id: int, session: AsyncSession = Depends(get_session)):
+async def detect_engines(
+    machine_id: int,
+    session: AsyncSession = Depends(get_session),
+    _: "User" = Depends(require_admin),
+):
     machine = await session.get(Machine, machine_id)
     if not machine or machine.is_deleted:
         raise HTTPException(status_code=404, detail="Machine not found")
-    results = await detect_db_engines(machine.ip)
+    key_material, passphrase, username = await _get_key_material(session, machine)
+    async with open_ssh(
+        host=machine.ip,
+        port=machine.ssh_port,
+        username=username,
+        key_material=key_material,
+        passphrase=passphrase,
+    ) as ssh:
+        results = await detect_db_engines_via_ssh(ssh.run)
     return [EngineDetectionResult(**r) for r in results]

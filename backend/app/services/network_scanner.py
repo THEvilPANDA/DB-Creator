@@ -94,3 +94,14 @@ async def detect_db_engines(
         return {"port": port, "engine": engine, "open": is_open}
 
     return list(await asyncio.gather(*(_probe(p, e) for p, e in _ENGINE_BY_PORT.items())))
+
+
+async def detect_db_engines_via_ssh(run_fn) -> list[dict]:
+    """Check DB ports on the remote machine by running nc via SSH."""
+    results = []
+    for port, engine in _ENGINE_BY_PORT.items():
+        out = await run_fn(
+            f"nc -z -w1 localhost {port} 2>/dev/null && echo open || echo closed"
+        )
+        results.append({"port": port, "engine": engine, "open": out.strip() == "open"})
+    return results

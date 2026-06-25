@@ -18,6 +18,15 @@ def _make_pem():
 
 
 @pytest.fixture(autouse=True)
+async def override_require_admin(client):
+    from app.dependencies import require_admin
+    from app.main import app
+    from unittest.mock import MagicMock
+    app.dependency_overrides[require_admin] = lambda: MagicMock(is_admin=True, id=1, is_active=True)
+    yield
+
+
+@pytest.fixture(autouse=True)
 def patch_fernet(monkeypatch):
     monkeypatch.setenv("FERNET_KEY", FERNET_KEY)
     with patch("app.services.encryption.settings") as m:
@@ -92,3 +101,31 @@ async def test_scan_private_cidr(client):
         r = await client.post("/api/v1/machines/scan", json={"cidr": "192.168.1.0/30", "method": "port22"})
     assert r.status_code == 200
     assert r.json()[0]["ip"] == "192.168.1.1"
+
+
+@pytest.mark.asyncio
+async def test_detect_engines_via_ssh(client, ssh_key_id):
+    r = await client.post("/api/v1/machines", json={
+        "ip": "192.168.3.10", "ssh_port": 22, "ssh_key_id": ssh_key_id
+    })
+    assert r.status_code == 201
+    machine_id = r.json()["id"]
+
+    mock_conn = MagicMock()
+
+    async def _mock_run(cmd, check=False):
+        m = MagicMock()
+        m.stdout = "open\n" if "5432" in cmd else "closed\n"
+        return m
+
+    mock_conn.run = AsyncMock(side_effect=_mock_run)
+
+    with patch("app.services.ssh_tunnel.asyncssh.connect", new=AsyncMock(return_value=mock_conn)), \
+         patch("app.services.ssh_tunnel.asyncssh.import_private_key", return_value=MagicMock()):
+        r2 = await client.post(f"/api/v1/machines/{machine_id}/detect-engines")
+
+    assert r2.status_code == 200
+    results = {item["engine"]: item["open"] for item in r2.json()}
+    assert results["postgresql"] is True
+    assert results["mysql"] is False
+    assert results["mongodb"] is False

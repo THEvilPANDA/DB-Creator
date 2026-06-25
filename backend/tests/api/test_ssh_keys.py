@@ -4,6 +4,16 @@ from cryptography.fernet import Fernet
 
 FERNET_KEY = Fernet.generate_key().decode()
 
+
+@pytest.fixture(autouse=True)
+async def override_require_admin(client):
+    from app.dependencies import require_admin
+    from app.main import app
+    from unittest.mock import MagicMock
+    app.dependency_overrides[require_admin] = lambda: MagicMock(is_admin=True, id=1, is_active=True)
+    yield
+
+
 @pytest.fixture(autouse=True)
 def patch_fernet(monkeypatch):
     monkeypatch.setenv("FERNET_KEY", FERNET_KEY)

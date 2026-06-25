@@ -4,8 +4,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.database import get_session
+from app.dependencies import require_admin
 from app.models.machine import Machine
 from app.models.ssh_key import SSHKey
+from app.models.user import User
 from app.schemas.ssh_key import SSHKeyCreate, SSHKeyRead
 from app.services.encryption import encrypt
 
@@ -23,6 +25,7 @@ def _validate_private_key(pem: str, passphrase: str | None = None) -> None:
 async def create_ssh_key(
     payload: SSHKeyCreate,
     session: AsyncSession = Depends(get_session),
+    _: User = Depends(require_admin),
 ):
     _validate_private_key(payload.private_key, payload.passphrase)
     record = SSHKey(
@@ -38,13 +41,20 @@ async def create_ssh_key(
 
 
 @router.get("", response_model=list[SSHKeyRead])
-async def list_ssh_keys(session: AsyncSession = Depends(get_session)):
+async def list_ssh_keys(
+    session: AsyncSession = Depends(get_session),
+    _: User = Depends(require_admin),
+):
     result = await session.execute(select(SSHKey))
     return [SSHKeyRead.model_validate(k) for k in result.scalars().all()]
 
 
 @router.delete("/{key_id}", response_model=SSHKeyRead)
-async def delete_ssh_key(key_id: int, session: AsyncSession = Depends(get_session)):
+async def delete_ssh_key(
+    key_id: int,
+    session: AsyncSession = Depends(get_session),
+    _: User = Depends(require_admin),
+):
     record = await session.get(SSHKey, key_id)
     if not record:
         raise HTTPException(status_code=404, detail="SSH key not found")
