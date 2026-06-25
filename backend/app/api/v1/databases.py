@@ -177,6 +177,12 @@ async def query_database(
     if not server or not server.admin_dsn:
         raise HTTPException(status_code=400, detail="Server has no admin DSN — set it in Servers before querying")
 
+    if server.machine_id:
+        raise HTTPException(
+            status_code=400,
+            detail="SQL console is not supported for SSH-tunneled servers in this version",
+        )
+
     engine = server.engine
 
     if not _SELECT_RE.match(payload.sql):
