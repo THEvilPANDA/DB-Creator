@@ -81,14 +81,15 @@ class PostgreSQLProvisioner(DatabaseProvisioner):
         conn = await self._connect()
         try:
             user = _quote_identifier(spec.username)
-            escaped_password = spec.password.replace("'", "''")
+            # Use PostgreSQL's own quote_literal to safely escape the password
+            quoted_password = await conn.fetchval("SELECT quote_literal($1)", spec.password)
             role_exists = await conn.fetchval(
                 "SELECT 1 FROM pg_roles WHERE rolname = $1", spec.username
             )
             if role_exists:
-                await conn.execute(f"ALTER USER {user} WITH PASSWORD '{escaped_password}'")
+                await conn.execute(f"ALTER USER {user} WITH PASSWORD {quoted_password}")
             else:
-                await conn.execute(f"CREATE USER {user} WITH PASSWORD '{escaped_password}'")
+                await conn.execute(f"CREATE USER {user} WITH PASSWORD {quoted_password}")
             return UserResult(username=spec.username, success=True)
         except Exception as exc:
             return UserResult(username=spec.username, success=False, message=str(exc))

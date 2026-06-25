@@ -49,16 +49,12 @@ async def _run_pg_query(dsn: str, sql: str) -> QueryResponse:
         logger.exception("Failed to connect (pg)")
         return QueryResponse(columns=[], rows=[], row_count=0, error="Cannot connect to database")
     try:
-        if _SELECT_RE.match(sql):
-            records = await conn.fetch(sql)
-            if not records:
-                return QueryResponse(columns=[], rows=[], row_count=0)
-            columns = list(records[0].keys())
-            rows = [[_to_json(v) for v in r.values()] for r in records[:MAX_ROWS]]
-            return QueryResponse(columns=columns, rows=rows, row_count=len(records))
-        else:
-            status = await conn.execute(sql)
-            return QueryResponse(columns=["result"], rows=[[status]], row_count=1, status=status)
+        records = await conn.fetch(sql)
+        if not records:
+            return QueryResponse(columns=[], rows=[], row_count=0)
+        columns = list(records[0].keys())
+        rows = [[_to_json(v) for v in r.values()] for r in records[:MAX_ROWS]]
+        return QueryResponse(columns=columns, rows=rows, row_count=len(records))
     except asyncpg.PostgresError as exc:
         return QueryResponse(columns=[], rows=[], row_count=0, error=str(exc))
     except Exception:
@@ -182,6 +178,9 @@ async def query_database(
         raise HTTPException(status_code=400, detail="Server has no admin DSN — set it in Servers before querying")
 
     engine = server.engine
+
+    if not _SELECT_RE.match(payload.sql):
+        raise HTTPException(status_code=400, detail="Only SELECT queries are allowed in the console")
 
     if engine in ("postgresql", "pgvector"):
         db_dsn = server.admin_dsn.rsplit("/", 1)[0] + f"/{log.db_name}"
