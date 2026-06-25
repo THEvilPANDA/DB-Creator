@@ -26,20 +26,20 @@ _UNKNOWN_CAPACITY = lambda sid: CapacityMetrics(  # noqa: E731
 )
 
 
-async def _live_capacity(server: Server) -> CapacityMetrics:
+async def _live_capacity(server: Server, session: AsyncSession) -> CapacityMetrics:
     if not server.admin_dsn:
         return _UNKNOWN_CAPACITY(server.id)
     try:
-        provisioner = get_provisioner(server)
-        m = await asyncio.wait_for(provisioner.get_capacity(), timeout=5.0)
-        return CapacityMetrics(
-            server_id=m.server_id,
-            db_count=m.db_count,
-            active_connections=m.active_connections,
-            disk_used_gb=m.disk_used_gb,
-            disk_free_gb=m.disk_free_gb,
-            health=m.health,
-        )
+        async with get_provisioner(server, session) as provisioner:
+            m = await asyncio.wait_for(provisioner.get_capacity(), timeout=5.0)
+            return CapacityMetrics(
+                server_id=m.server_id,
+                db_count=m.db_count,
+                active_connections=m.active_connections,
+                disk_used_gb=m.disk_used_gb,
+                disk_free_gb=m.disk_free_gb,
+                health=m.health,
+            )
     except Exception:
         return _UNKNOWN_CAPACITY(server.id)
 
@@ -70,7 +70,7 @@ async def health_summary(session: AsyncSession = Depends(get_session)):
     result = await session.execute(select(Server).where(Server.is_deleted == False))  # noqa: E712
     servers = result.scalars().all()
 
-    capacities = await asyncio.gather(*[_live_capacity(s) for s in servers])
+    capacities = await asyncio.gather(*[_live_capacity(s, session) for s in servers])
 
     entries: list[ServerHealthEntry] = []
     counts = {"healthy": 0, "warning": 0, "critical": 0, "unknown": 0}
@@ -135,4 +135,4 @@ async def get_server_capacity(server_id: int, session: AsyncSession = Depends(ge
     server = await session.get(Server, server_id)
     if not server or server.is_deleted:
         raise HTTPException(status_code=404, detail="Server not found")
-    return await _live_capacity(server)
+    return await _live_capacity(server, session)

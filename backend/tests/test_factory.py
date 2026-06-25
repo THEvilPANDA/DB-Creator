@@ -12,48 +12,56 @@ def _server(engine, admin_dsn="postgresql://u:p@h/db", api_key=None):
     s.critical_threshold_pct = 90.0
     s.host = "localhost"
     s.port = 5432
+    s.machine_id = None
     return s
 
 
-def test_factory_postgresql():
+@pytest.mark.asyncio
+async def test_factory_postgresql():
     from app.services.provisioner.factory import get_provisioner
     from app.services.provisioner.postgresql import PostgreSQLProvisioner
-    p = get_provisioner(_server("postgresql"))
-    assert isinstance(p, PostgreSQLProvisioner)
+    async with get_provisioner(_server("postgresql")) as p:
+        assert isinstance(p, PostgreSQLProvisioner)
 
 
-def test_factory_pgvector():
+@pytest.mark.asyncio
+async def test_factory_pgvector():
     from app.services.provisioner.factory import get_provisioner
     from app.services.provisioner.pgvector import PgvectorProvisioner
-    p = get_provisioner(_server("pgvector"))
-    assert isinstance(p, PgvectorProvisioner)
+    async with get_provisioner(_server("pgvector")) as p:
+        assert isinstance(p, PgvectorProvisioner)
 
 
-def test_factory_mysql():
+@pytest.mark.asyncio
+async def test_factory_mysql():
     from app.services.provisioner.factory import get_provisioner
     from app.services.provisioner.mysql import MySQLProvisioner
-    p = get_provisioner(_server("mysql", admin_dsn="mysql://u:p@h/"))
-    assert isinstance(p, MySQLProvisioner)
+    async with get_provisioner(_server("mysql", admin_dsn="mysql://u:p@h/")) as p:
+        assert isinstance(p, MySQLProvisioner)
 
 
-def test_factory_mongodb():
+@pytest.mark.asyncio
+async def test_factory_mongodb():
     from app.services.provisioner.factory import get_provisioner
     from app.services.provisioner.mongodb import MongoDBProvisioner
-    p = get_provisioner(_server("mongodb", admin_dsn="mongodb://u:p@h/"))
-    assert isinstance(p, MongoDBProvisioner)
+    async with get_provisioner(_server("mongodb", admin_dsn="mongodb://u:p@h/")) as p:
+        assert isinstance(p, MongoDBProvisioner)
 
 
-def test_factory_qdrant():
+@pytest.mark.asyncio
+async def test_factory_qdrant():
     from app.services.provisioner.factory import get_provisioner
     from app.services.provisioner.qdrant import QdrantProvisioner
-    p = get_provisioner(_server("qdrant", admin_dsn="http://localhost:6333"))
-    assert isinstance(p, QdrantProvisioner)
+    async with get_provisioner(_server("qdrant", admin_dsn="http://localhost:6333")) as p:
+        assert isinstance(p, QdrantProvisioner)
 
 
-def test_factory_unknown_raises():
+@pytest.mark.asyncio
+async def test_factory_unknown_raises():
     from app.services.provisioner.factory import get_provisioner
     with pytest.raises(ValueError, match="Unknown engine"):
-        get_provisioner(_server("oracle"))
+        async with get_provisioner(_server("oracle")):
+            pass
 
 
 def test_database_spec_options_default():
@@ -66,3 +74,18 @@ def test_database_spec_options_custom():
     from app.services.provisioner.base import DatabaseSpec
     spec = DatabaseSpec(name="mydb", owner="alice", options={"dimensions": 1536})
     assert spec.options == {"dimensions": 1536}
+
+
+@pytest.mark.asyncio
+async def test_get_provisioner_direct_no_machine_id():
+    from app.services.provisioner.factory import get_provisioner
+    from unittest.mock import MagicMock
+    server = MagicMock()
+    server.machine_id = None
+    server.engine = "postgresql"
+    server.admin_dsn = "postgresql://u:p@localhost:5432/db"
+    server.id = 1
+    server.warning_threshold_pct = 75.0
+    server.critical_threshold_pct = 90.0
+    async with get_provisioner(server) as provisioner:
+        assert provisioner is not None

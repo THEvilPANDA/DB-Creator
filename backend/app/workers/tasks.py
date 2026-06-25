@@ -55,87 +55,86 @@ async def provision_database(ctx: dict, job_id: int) -> dict:
         publisher.publish(DomainEvent("DatabaseProvisioningStarted", {"job_id": job_id}))
 
         try:
-            provisioner = get_provisioner(server)
+            async with get_provisioner(server, session) as provisioner:
+                extensions: list[str] = db_template.extensions if db_template else []
+                privileges: list[str] = ["CONNECT", "CREATE"]
+                if db_template and db_template.permissions:
+                    app_privs = db_template.permissions.get("app_user")
+                    if app_privs:
+                        privileges = app_privs
 
-            extensions: list[str] = db_template.extensions if db_template else []
-            privileges: list[str] = ["CONNECT", "CREATE"]
-            if db_template and db_template.permissions:
-                app_privs = db_template.permissions.get("app_user")
-                if app_privs:
-                    privileges = app_privs
+                db_user = f"{job.db_name}_user"
+                db_password = secrets.token_urlsafe(24)
 
-            db_user = f"{job.db_name}_user"
-            db_password = secrets.token_urlsafe(24)
+                user_result = await provisioner.create_user(
+                    UserSpec(username=db_user, password=db_password, db_name=job.db_name)
+                )
+                if not user_result.success:
+                    raise RuntimeError(f"create_user failed: {user_result.message}")
 
-            user_result = await provisioner.create_user(
-                UserSpec(username=db_user, password=db_password, db_name=job.db_name)
-            )
-            if not user_result.success:
-                raise RuntimeError(f"create_user failed: {user_result.message}")
+                db_result = await provisioner.create_database(
+                    DatabaseSpec(name=job.db_name, owner=db_user, extensions=[])
+                )
+                if not db_result.success:
+                    raise RuntimeError(f"create_database failed: {db_result.message}")
 
-            db_result = await provisioner.create_database(
-                DatabaseSpec(name=job.db_name, owner=db_user, extensions=[])
-            )
-            if not db_result.success:
-                raise RuntimeError(f"create_database failed: {db_result.message}")
+                await provisioner.grant_permissions(
+                    PermissionSpec(db_name=job.db_name, username=db_user, privileges=privileges)
+                )
 
-            await provisioner.grant_permissions(
-                PermissionSpec(db_name=job.db_name, username=db_user, privileges=privileges)
-            )
+                if extensions:
+                    await provisioner.enable_extensions(job.db_name, extensions)
 
-            if extensions:
-                await provisioner.enable_extensions(job.db_name, extensions)
-
-            connection_uri = _build_connection_uri(
-                engine=server.engine,
-                user=db_user,
-                password=db_password,
-                host=server.host,
-                port=server.port,
-                db_name=job.db_name,
-            )
-
-            log = CreationLog(
-                job_id=job.id,
-                server_id=server.id,
-                db_name=job.db_name,
-                db_user=db_user,
-                connection_uri=connection_uri,
-                iac_yaml=generate_yaml(
-                    db_name=job.db_name,
-                    db_user=db_user,
-                    host=server.host,
-                    port=server.port,
-                    environment=job.environment,
+                connection_uri = _build_connection_uri(
                     engine=server.engine,
-                ),
-                iac_terraform=generate_terraform(
-                    db_name=job.db_name,
-                    db_user=db_user,
+                    user=db_user,
+                    password=db_password,
                     host=server.host,
                     port=server.port,
-                ),
-                provisioned_at=datetime.now(timezone.utc).replace(tzinfo=None),
-            )
-            session.add(log)
+                    db_name=job.db_name,
+                )
 
-            elapsed = time.monotonic() - _start
-            PROVISION_DURATION.labels(environment=job.environment).observe(elapsed)
-            JOBS_COMPLETED.labels(status="succeeded", environment=job.environment).inc()
+                log = CreationLog(
+                    job_id=job.id,
+                    server_id=server.id,
+                    db_name=job.db_name,
+                    db_user=db_user,
+                    connection_uri=connection_uri,
+                    iac_yaml=generate_yaml(
+                        db_name=job.db_name,
+                        db_user=db_user,
+                        host=server.host,
+                        port=server.port,
+                        environment=job.environment,
+                        engine=server.engine,
+                    ),
+                    iac_terraform=generate_terraform(
+                        db_name=job.db_name,
+                        db_user=db_user,
+                        host=server.host,
+                        port=server.port,
+                    ),
+                    provisioned_at=datetime.now(timezone.utc).replace(tzinfo=None),
+                )
+                session.add(log)
 
-            job.status = "succeeded"
-            job.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
-            session.add(job)
-            await write_audit(session, actor="worker", action="provision.complete", entity_type="job",
-                              entity_id=job_id, payload={"db_name": job.db_name, "db_user": db_user,
-                                                          "duration_s": round(elapsed, 2)})
-            await session.commit()
+                elapsed = time.monotonic() - _start
+                PROVISION_DURATION.labels(environment=job.environment).observe(elapsed)
+                JOBS_COMPLETED.labels(status="succeeded", environment=job.environment).inc()
 
-            publisher.publish(DomainEvent(
-                "DatabaseProvisioningCompleted",
-                {"job_id": job_id, "db_name": job.db_name, "db_user": db_user},
-            ))
-            return {"success": True, "job_id": job_id, "db_name": job.db_name}
+                job.status = "succeeded"
+                job.completed_at = datetime.now(timezone.utc).replace(tzinfo=None)
+                session.add(job)
+                await write_audit(session, actor="worker", action="provision.complete", entity_type="job",
+                                  entity_id=job_id, payload={"db_name": job.db_name, "db_user": db_user,
+                                                              "duration_s": round(elapsed, 2)})
+                await session.commit()
+
+                publisher.publish(DomainEvent(
+                    "DatabaseProvisioningCompleted",
+                    {"job_id": job_id, "db_name": job.db_name, "db_user": db_user},
+                ))
+                return {"success": True, "job_id": job_id, "db_name": job.db_name}
 
         except Exception as exc:
             JOBS_COMPLETED.labels(status="failed", environment=job.environment).inc()
