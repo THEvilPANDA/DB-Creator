@@ -4,14 +4,16 @@ import Jobs from './pages/Jobs'
 import Login from './pages/Login'
 import Servers from './pages/Servers'
 import Settings from './pages/Settings'
+import Systems from './pages/Systems'
 import { auth } from './api'
 
-type Page = 'dashboard' | 'servers' | 'jobs' | 'settings'
+type Page = 'dashboard' | 'servers' | 'jobs' | 'settings' | 'systems'
 
 const NAV: { id: Page; label: string; icon: string }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: '⬡' },
   { id: 'servers', label: 'Servers', icon: '◫' },
   { id: 'jobs', label: 'Jobs', icon: '⟳' },
+  { id: 'systems', label: 'Systems', icon: '⬕' },
   { id: 'settings', label: 'Settings', icon: '⚙' },
 ]
 
@@ -63,6 +65,7 @@ export default function App() {
         {page === 'dashboard' && <Dashboard />}
         {page === 'servers' && <Servers />}
         {page === 'jobs' && <Jobs />}
+        {page === 'systems' && <Systems />}
         {page === 'settings' && <Settings />}
       </main>
     </>
