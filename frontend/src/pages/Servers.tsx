@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api } from '../api'
-import type { Server, ServerCreate } from '../types'
+import type { Machine, Server, ServerCreate } from '../types'
 
 const ENVS = ['development', 'staging', 'production']
 const ENGINES = ['postgresql', 'pgvector', 'mysql', 'mongodb', 'qdrant']
@@ -24,7 +24,7 @@ const ENGINE_DSN_LABEL: Record<string, string> = {
 const blank: ServerCreate = {
   name: '', host: '', port: 5432, engine: 'postgresql',
   environment: 'development', region: '', max_connections: 100, max_storage_gb: 100,
-  warning_threshold_pct: 75, critical_threshold_pct: 90,
+  warning_threshold_pct: 75, critical_threshold_pct: 90, machine_id: null,
 }
 
 export default function Servers() {
@@ -36,11 +36,18 @@ export default function Servers() {
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
+  const [machines, setMachines] = useState<Machine[]>([])
 
   const load = () => {
     setLoading(true)
-    api.servers.list()
-      .then(data => setServers(data.filter(s => !s.is_deleted)))
+    Promise.all([
+      api.servers.list(),
+      api.machines.list(),
+    ])
+      .then(([data, mList]) => {
+        setServers(data.filter(s => !s.is_deleted))
+        setMachines(mList.filter(m => !m.is_deleted))
+      })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }
@@ -60,7 +67,9 @@ export default function Servers() {
       name: s.name, host: s.host, port: s.port, engine: s.engine,
       environment: s.environment, region: s.region ?? '',
       max_connections: s.max_connections, max_storage_gb: s.max_storage_gb,
-      warning_threshold_pct: s.warning_threshold_pct, critical_threshold_pct: s.critical_threshold_pct,
+      warning_threshold_pct: s.warning_threshold_pct,
+      critical_threshold_pct: s.critical_threshold_pct,
+      machine_id: s.machine_id ?? null,
     })
     setShowForm(true)
     setError('')
@@ -201,6 +210,23 @@ export default function Servers() {
                   />
                 </div>
               )}
+              <div className="form-group">
+                <label>
+                  SSH Tunnel via Machine
+                  <span style={{ color: 'var(--muted)', fontSize: 11 }}> (optional — host/port are as seen from the machine)</span>
+                </label>
+                <select
+                  value={form.machine_id ?? ''}
+                  onChange={e => setForm(f => ({ ...f, machine_id: e.target.value ? Number(e.target.value) : null }))}
+                >
+                  <option value="">— direct connection —</option>
+                  {machines.map(m => (
+                    <option key={m.id} value={m.id}>
+                      {m.label ?? m.ip} ({m.ip})
+                    </option>
+                  ))}
+                </select>
+              </div>
             </div>
             <div className="row gap-2 mt-4">
               <button className="btn btn-primary" type="submit" disabled={submitting}>
