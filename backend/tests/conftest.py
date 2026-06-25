@@ -22,6 +22,13 @@ async def test_engine():
 
 
 @pytest.fixture
+async def db_session(test_engine):
+    AsyncTestSession = async_sessionmaker(test_engine, expire_on_commit=False)
+    async with AsyncTestSession() as session:
+        yield session
+
+
+@pytest.fixture
 async def client(test_engine):
     AsyncTestSession = async_sessionmaker(test_engine, expire_on_commit=False)
 
