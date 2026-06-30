@@ -63,13 +63,13 @@ class SiteRead(BaseModel):
     template: str
     subdomain: str
     domain: str
-    prefix: Optional[str]
+    prefix: Optional[str] = None
     routing_mode: str
-    app_port: Optional[int]
+    app_port: Optional[int] = None
     web_root: str
-    directory: Optional[str]
+    directory: Optional[str] = None
     web_server: str
-    notes: Optional[str]
+    notes: Optional[str] = None
     created_at: datetime
     is_deleted: bool
 

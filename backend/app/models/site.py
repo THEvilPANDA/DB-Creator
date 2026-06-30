@@ -61,6 +61,6 @@ class SiteMigration(SQLModel, table=True):
     status: str = Field(default="pending", max_length=20)
     started_at: Optional[datetime] = Field(default=None)
     completed_at: Optional[datetime] = Field(default=None)
-    error_message: Optional[str] = Field(default=None)
+    error_message: Optional[str] = Field(default=None, sa_column=sa.Column(sa.Text, nullable=True))
     log: Optional[str] = Field(default=None, sa_column=sa.Column(sa.Text, nullable=True))
     created_at: datetime = Field(default_factory=_utcnow)

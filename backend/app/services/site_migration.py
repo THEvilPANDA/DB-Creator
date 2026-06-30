@@ -15,6 +15,7 @@ from app.services.ssh_tunnel import SSHConnection, open_ssh
 
 _DNS_LABEL_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9-]*$')
 _SAFE_PATH_RE = re.compile(r'^[a-zA-Z0-9/_.\-]+$')
+_SAFE_PREFIX_RE = re.compile(r'^(/[a-zA-Z0-9/_.\-]*)?$')
 
 
 def _validate_dns_label(value: str, field: str) -> None:
@@ -39,6 +40,11 @@ async def _resolve_machine_ssh(session: AsyncSession, server: Server):
     machine = await session.get(Machine, server.machine_id)
     if not machine or machine.is_deleted:
         raise ValueError(f"Machine {server.machine_id} not found or deleted")
+    if not machine.host_fingerprint:
+        raise ValueError(
+            f"Machine {machine.id} ({machine.ip}) has no verified host key. "
+            "Run a connectivity check on this machine before provisioning."
+        )
     ssh_key_rec = await session.get(SSHKey, machine.ssh_key_id)
     if not ssh_key_rec:
         raise ValueError(f"SSH key {machine.ssh_key_id} not found")
@@ -73,6 +79,8 @@ async def write_apache_vhost(ssh: SSHConnection, site, port: int, site_dir: str)
     web_url = f"{site.subdomain}.{site.domain}"
     vhost_name = f"{site.subdomain}-{site.domain.replace('.', '-')}"
     prefix = (site.prefix or "").rstrip("/")
+    if prefix and not _SAFE_PREFIX_RE.match(prefix):
+        raise ValueError(f"prefix contains invalid characters: {prefix!r}")
 
     if site.routing_mode == "port":
         body = (
@@ -139,8 +147,6 @@ async def run_migration(session: AsyncSession, migration: SiteMigration) -> None
     Execute a site migration in place. Mutates migration.status/log/error_message.
     Caller must NOT commit before calling; this function manages its own commits.
     """
-    from sqlmodel import select
-
     log_lines: list[str] = []
 
     def _log(msg: str) -> None:
@@ -194,8 +200,6 @@ async def run_migration(session: AsyncSession, migration: SiteMigration) -> None
             await ensure_web_root(ssh, site.web_root)
             _log(f"Ensured web_root: {site.web_root}")
 
-            site_subdir = site.directory or site.subdomain
-            site_dir = f"{site.web_root}/{site_subdir}"
             await ssh.run(f"mkdir -p {shlex.quote(site_dir)}")
             target_dep.directory = site_dir
             _log(f"Created site directory: {site_dir}")

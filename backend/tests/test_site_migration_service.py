@@ -1,3 +1,5 @@
+import pytest
+from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 
@@ -72,3 +74,45 @@ async def test_write_haproxy_backend_returns_todo():
     result = await write_haproxy_backend(ssh, site, 4007)
     assert "TODO" in result
     ssh.run.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_write_apache_vhost_rejects_newline_in_prefix():
+    from app.services.site_migration import write_apache_vhost
+
+    site = SimpleNamespace(
+        subdomain="app", domain="example.com",
+        prefix="/x\nSetHandler server-status",
+        routing_mode="port", directory=None,
+        web_root="/var/www", web_server="apache",
+    )
+    with pytest.raises(ValueError, match="prefix contains invalid characters"):
+        await write_apache_vhost(None, site, 3000, "/var/www/app")
+
+
+@pytest.mark.asyncio
+async def test_resolve_machine_ssh_fails_without_host_fingerprint():
+    from app.services.site_migration import _resolve_machine_ssh
+
+    machine = MagicMock()
+    machine.id = 1
+    machine.ip = "1.2.3.4"
+    machine.is_deleted = False
+    machine.host_fingerprint = None
+    machine.ssh_key_id = 1
+
+    ssh_key = MagicMock()
+    ssh_key.encrypted_private_key = "key"
+    ssh_key.passphrase_encrypted = None
+    ssh_key.username = "ubuntu"
+
+    session = MagicMock()
+    session.get = AsyncMock(side_effect=[machine, ssh_key])
+
+    server = MagicMock()
+    server.machine_id = 1
+    server.name = "test"
+    server.id = 42
+
+    with pytest.raises(ValueError, match="no verified host key"):
+        await _resolve_machine_ssh(session, server)
