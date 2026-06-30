@@ -14,12 +14,18 @@ from app.services.ssh_tunnel import SSHConnection, open_ssh
 
 
 _DNS_LABEL_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9-]*$')
+_SAFE_PATH_RE = re.compile(r'^[a-zA-Z0-9/_.\-]+$')
 
 
 def _validate_dns_label(value: str, field: str) -> None:
     for label in value.replace('_', '-').split('.'):
         if not label or not _DNS_LABEL_RE.match(label):
             raise ValueError(f"{field} contains invalid characters: {value!r}")
+
+
+def _validate_path(value: str, field: str) -> None:
+    if not value or not _SAFE_PATH_RE.match(value):
+        raise ValueError(f"{field} contains invalid characters for a filesystem path: {value!r}")
 
 
 def _utcnow() -> datetime:
@@ -63,6 +69,7 @@ async def write_apache_vhost(ssh: SSHConnection, site, port: int, site_dir: str)
     _validate_dns_label(site.subdomain, "subdomain")
     for label in site.domain.split('.'):
         _validate_dns_label(label, "domain")
+    _validate_path(site_dir, "site_dir")
     web_url = f"{site.subdomain}.{site.domain}"
     vhost_name = f"{site.subdomain}-{site.domain.replace('.', '-')}"
     prefix = (site.prefix or "").rstrip("/")
@@ -168,6 +175,11 @@ async def run_migration(session: AsyncSession, migration: SiteMigration) -> None
         await session.commit()
         await session.refresh(target_dep)
         _log(f"Created staging deployment id={target_dep.id}")
+
+        _validate_path(site.web_root, "web_root")
+        site_subdir = site.directory or site.subdomain
+        site_dir = f"{site.web_root}/{site_subdir}"
+        _validate_path(site_dir, "site_dir")
 
         async with open_ssh(
             host=machine.ip,
