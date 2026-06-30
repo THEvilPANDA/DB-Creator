@@ -216,3 +216,58 @@ export interface EngineDetectionResult {
   engine: string
   open: boolean
 }
+
+export interface Site {
+  id: number
+  name: string
+  template: string
+  subdomain: string
+  domain: string
+  prefix: string | null
+  routing_mode: string
+  app_port: number | null
+  web_root: string
+  directory: string | null
+  web_server: string
+  notes: string | null
+  created_at: string
+  is_deleted: boolean
+}
+
+export interface SiteCreate {
+  name: string
+  template: string
+  subdomain: string
+  domain: string
+  prefix?: string
+  routing_mode: string
+  app_port?: number
+  web_root?: string
+  directory?: string
+  web_server?: string
+  notes?: string
+}
+
+export interface SiteDeployment {
+  id: number
+  site_id: number
+  server_id: number
+  status: string
+  port: number | null
+  directory: string | null
+  created_at: string
+  retired_at: string | null
+}
+
+export interface Migration {
+  id: number
+  site_id: number
+  source_deployment_id: number | null
+  target_server_id: number
+  status: string
+  started_at: string | null
+  completed_at: string | null
+  error_message: string | null
+  log: string | null
+  created_at: string
+}

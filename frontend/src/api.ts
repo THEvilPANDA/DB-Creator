@@ -1,9 +1,10 @@
 import type {
   ApprovalPolicy, CreationLog, DBTemplate, DBTemplateCreate,
   EngineDetectionResult, HealthCheck, Job, JobCreate, Machine, MachineCreate,
-  NamingProfile, NamingProfileCreate,
+  Migration, NamingProfile, NamingProfileCreate,
   Paginated, QueryResult, RequestTemplate, RequestTemplateCreate,
-  ScanResult, Server, ServerCreate, SSHKey, SSHKeyCreate, Stats,
+  ScanResult, Server, ServerCreate, Site, SiteCreate, SiteDeployment,
+  SSHKey, SSHKeyCreate, Stats,
 } from './types'
 
 const BASE = import.meta.env.VITE_API_URL ?? '/api/v1'
@@ -190,5 +191,22 @@ export const api = {
       req<EngineDetectionResult[]>(`/machines/${id}/detect-engines`, { method: 'POST' }),
     scan: (data: { cidr: string; method: string }) =>
       req<ScanResult[]>('/machines/scan', { method: 'POST', body: JSON.stringify(data) }),
+  },
+  sites: {
+    list: () => req<Site[]>('/sites'),
+    get: (id: number) => req<Site>(`/sites/${id}`),
+    create: (data: SiteCreate) =>
+      req<Site>('/sites', { method: 'POST', body: JSON.stringify(data) }),
+    update: (id: number, data: Partial<SiteCreate>) =>
+      req<Site>(`/sites/${id}`, { method: 'PUT', body: JSON.stringify(data) }),
+    remove: (id: number) => req<Site>(`/sites/${id}`, { method: 'DELETE' }),
+    deployments: (id: number) => req<SiteDeployment[]>(`/sites/${id}/deployments`),
+    migrate: (siteId: number, targetServerId: number) =>
+      req<Migration>(`/sites/${siteId}/migrate`, {
+        method: 'POST',
+        body: JSON.stringify({ site_id: siteId, target_server_id: targetServerId }),
+      }),
+    migrationStatus: (migrationId: number) =>
+      req<Migration>(`/sites/migrations/${migrationId}`),
   },
 }
