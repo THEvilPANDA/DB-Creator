@@ -2,6 +2,13 @@ import { useEffect, useState } from 'react'
 import { api } from '../api'
 import type { Migration, Server, Site, SiteCreate, SiteDeployment } from '../types'
 
+const STATUS_COLOR: Record<string, string> = {
+  succeeded: 'var(--green)',
+  failed: 'var(--red)',
+  running: 'var(--accent)',
+  pending: 'var(--muted)',
+}
+
 const EMPTY_FORM: SiteCreate = {
   name: '',
   template: '',
@@ -145,13 +152,6 @@ export default function Sites() {
 
   const serverName = (id: number) =>
     servers.find(s => s.id === id)?.name ?? `Server #${id}`
-
-  const STATUS_COLOR: Record<string, string> = {
-    succeeded: 'var(--green)',
-    failed: 'var(--red)',
-    running: 'var(--accent)',
-    pending: 'var(--muted)',
-  }
 
   return (
     <>
