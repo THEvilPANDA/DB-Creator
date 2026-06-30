@@ -12,6 +12,7 @@ from app.api.v1.request_templates import router as request_templates_router
 from app.api.v1.search import router as search_router
 from app.api.v1.servers import router as servers_router
 from app.api.v1.machines import router as machines_router
+from app.api.v1.sites import router as sites_router
 from app.api.v1.ssh_keys import router as ssh_keys_router
 from app.api.v1.stats import router as stats_router
 
@@ -30,3 +31,4 @@ api_router.include_router(stats_router)
 api_router.include_router(search_router)
 api_router.include_router(ssh_keys_router)
 api_router.include_router(machines_router)
+api_router.include_router(sites_router)
