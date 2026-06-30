@@ -1,3 +1,5 @@
+import re
+import shlex
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -9,6 +11,15 @@ from app.models.site import Site, SiteDeployment, SiteMigration
 from app.models.ssh_key import SSHKey
 from app.services.encryption import decrypt
 from app.services.ssh_tunnel import SSHConnection, open_ssh
+
+
+_DNS_LABEL_RE = re.compile(r'^[a-zA-Z0-9][a-zA-Z0-9-]*$')
+
+
+def _validate_dns_label(value: str, field: str) -> None:
+    for label in value.replace('_', '-').split('.'):
+        if not label or not _DNS_LABEL_RE.match(label):
+            raise ValueError(f"{field} contains invalid characters: {value!r}")
 
 
 def _utcnow() -> datetime:
@@ -31,7 +42,7 @@ async def _resolve_machine_ssh(session: AsyncSession, server: Server):
 
 
 async def ensure_web_root(ssh: SSHConnection, web_root: str) -> str:
-    return await ssh.run(f"mkdir -p {web_root} && echo ok")
+    return await ssh.run(f"mkdir -p {shlex.quote(web_root)} && echo ok")
 
 
 async def find_free_port(ssh: SSHConnection, preferred_port: int) -> int:
@@ -49,6 +60,9 @@ async def find_free_port(ssh: SSHConnection, preferred_port: int) -> int:
 async def write_apache_vhost(ssh: SSHConnection, site, port: int, site_dir: str) -> str:
     # Assumes Debian/Ubuntu apache2 layout: /etc/apache2/sites-available/
     # TODO: RHEL/CentOS uses /etc/httpd/conf.d/ — operator must verify distro layout.
+    _validate_dns_label(site.subdomain, "subdomain")
+    for label in site.domain.split('.'):
+        _validate_dns_label(label, "domain")
     web_url = f"{site.subdomain}.{site.domain}"
     vhost_name = f"{site.subdomain}-{site.domain.replace('.', '-')}"
     prefix = (site.prefix or "").rstrip("/")
@@ -78,8 +92,8 @@ async def write_apache_vhost(ssh: SSHConnection, site, port: int, site_dir: str)
     vhost_path = f"/etc/apache2/sites-available/{vhost_name}.conf"
     escaped = body.replace("\\", "\\\\").replace("'", "'\\''")
     cmd = (
-        f"echo '{escaped}' | sudo tee {vhost_path} > /dev/null && "
-        f"sudo a2ensite {vhost_name} && "
+        f"echo '{escaped}' | sudo tee {shlex.quote(vhost_path)} > /dev/null && "
+        f"sudo a2ensite {shlex.quote(vhost_name)} && "
         f"sudo systemctl reload apache2 2>/dev/null || true"
     )
     return await ssh.run(cmd)
@@ -108,7 +122,7 @@ async def _best_effort_rsync(
     # or SSH agent forwarding. Neither is guaranteed. This is a best-effort step; failure
     # is logged but does not abort the migration. See MIGRATION_MODULE.md for alternatives.
     result = await ssh.run(
-        f"rsync -avz --delete {source_ip}:{source_dir}/ {target_dir}/ 2>&1 | tail -10"
+        f"rsync -avz --delete {shlex.quote(source_ip)}:{shlex.quote(source_dir)}/ {shlex.quote(target_dir)}/ 2>&1 | tail -10"
     )
     return result or "(no rsync output)"
 
@@ -170,7 +184,7 @@ async def run_migration(session: AsyncSession, migration: SiteMigration) -> None
 
             site_subdir = site.directory or site.subdomain
             site_dir = f"{site.web_root}/{site_subdir}"
-            await ssh.run(f"mkdir -p {site_dir}")
+            await ssh.run(f"mkdir -p {shlex.quote(site_dir)}")
             target_dep.directory = site_dir
             _log(f"Created site directory: {site_dir}")
 
