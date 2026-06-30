@@ -7,6 +7,7 @@ from app.models.machine import Machine
 from app.models.naming_profile import NamingProfile
 from app.models.request_template import RequestTemplate
 from app.models.server import Server
+from app.models.site import Site, SiteDeployment, SiteMigration
 from app.models.ssh_key import SSHKey
 from app.models.user import User
 
@@ -22,4 +23,7 @@ __all__ = [
     "User",
     "SSHKey",
     "Machine",
+    "Site",
+    "SiteDeployment",
+    "SiteMigration",
 ]
