@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
-import { api } from '../api'
+import { api, auth, BASE } from '../api'
 import type { EngineDetectionResult, Machine, MachineCreate, ScanResult, SSHKey, SSHKeyCreate } from '../types'
+import MachinePanel from '../components/MachinePanel'
 
 type Tab = 'sshkeys' | 'machines'
 
@@ -122,10 +123,18 @@ function Machines() {
   const [scanForm, setScanForm] = useState({ cidr: '', method: 'port22' })
   const [scanResults, setScanResults] = useState<ScanResult[] | null>(null)
   const [scanning, setScanning] = useState(false)
+  const [addingIp, setAddingIp] = useState<string | null>(null)
+  const [inlineKey, setInlineKey] = useState<number>(0)
+  const [inlineLabel, setInlineLabel] = useState('')
+  const [inlineUsername, setInlineUsername] = useState('')
+  const [inlinePrivateKey, setInlinePrivateKey] = useState('')
+  const [inlineKeyMode, setInlineKeyMode] = useState<'existing' | 'new'>('existing')
+  const [inlineSubmitting, setInlineSubmitting] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const [checking, setChecking] = useState<number | null>(null)
   const [detecting, setDetecting] = useState<number | null>(null)
   const [detectResults, setDetectResults] = useState<{ machineId: number; results: EngineDetectionResult[] } | null>(null)
+  const [panelMachine, setPanelMachine] = useState<Machine | null>(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
 
@@ -180,10 +189,31 @@ function Machines() {
 
   const runScan = async (e: React.FormEvent) => {
     e.preventDefault()
-    setScanning(true); setScanResults(null); setError('')
+    setScanning(true); setScanResults([]); setError('')
+    const token = auth.getToken()
+    const url = `${BASE}/machines/scan/stream?cidr=${encodeURIComponent(scanForm.cidr)}&method=${encodeURIComponent(scanForm.method)}`
     try {
-      const results = await api.machines.scan(scanForm)
-      setScanResults(results)
+      const response = await fetch(url, {
+        headers: token ? { Authorization: `Bearer ${token}` } : {},
+      })
+      if (!response.ok) throw new Error(`Scan failed: ${response.status}`)
+      const reader = response.body!.getReader()
+      const decoder = new TextDecoder()
+      let buffer = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buffer += decoder.decode(value, { stream: true })
+        const lines = buffer.split('\n')
+        buffer = lines.pop() ?? ''
+        for (const line of lines) {
+          if (!line.startsWith('data: ')) continue
+          const data = JSON.parse(line.slice(6)) as { done?: boolean; error?: string } & ScanResult
+          if (data.done) return
+          if (data.error) { setError(data.error); return }
+          setScanResults(prev => [...(prev ?? []), data])
+        }
+      }
     } catch (e: unknown) { setError(e instanceof Error ? e.message : String(e)) }
     finally { setScanning(false) }
   }
@@ -226,6 +256,7 @@ function Machines() {
                   <option value="port22">Port 22 only</option>
                   <option value="ping">Ping sweep only</option>
                   <option value="both">Ping + Port 22</option>
+                  <option value="tcp">TCP multi-port (finds most devices)</option>
                 </select>
               </div>
             </div>
@@ -233,30 +264,145 @@ function Machines() {
               {scanning ? 'Scanning…' : 'Start Scan'}
             </button>
           </form>
-          {scanResults && (
+          {scanResults !== null && (
             <div style={{ marginTop: 16 }}>
               <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>
-                {scanResults.filter(r => r.ssh_open || r.ping_ok).length} hosts found
+                {scanning
+                  ? `Scanning… ${scanResults.length} found so far`
+                  : `${scanResults.length} hosts found`}
               </div>
               <div className="table-wrap">
                 <table>
-                  <thead><tr><th>IP</th><th>Ping</th><th>SSH (22)</th><th></th></tr></thead>
+                  <thead>
+                    <tr>
+                      <th>IP</th>
+                      <th>Hostname</th>
+                      <th>Open Ports</th>
+                      <th>SSH</th>
+                      <th></th>
+                    </tr>
+                  </thead>
                   <tbody>
-                    {scanResults.map(r => (
-                      <tr key={r.ip}>
-                        <td><code>{r.ip}</code></td>
-                        <td style={{ color: r.ping_ok ? 'var(--green)' : 'var(--muted)' }}>{r.ping_ok ? '✓' : '—'}</td>
-                        <td style={{ color: r.ssh_open ? 'var(--green)' : 'var(--muted)' }}>{r.ssh_open ? '✓' : '—'}</td>
-                        <td>
-                          {(r.ping_ok || r.ssh_open) && sshKeys.length > 0 && (
+                    {scanResults.map(r => {
+                      const PORT_LABELS: Record<number, string> = { 22: 'SSH', 80: 'HTTP', 443: 'HTTPS', 445: 'SMB', 3389: 'RDP', 8080: 'HTTP-alt', 8443: 'HTTPS-alt' }
+                      const isAdding = addingIp === r.ip
+                      return <>
+                        <tr key={r.ip}>
+                          <td><code>{r.ip}</code></td>
+                          <td style={{ fontSize: 12, color: 'var(--muted)' }}>{r.hostname ?? '—'}</td>
+                          <td style={{ fontSize: 11 }}>
+                            {r.open_ports.length > 0
+                              ? r.open_ports.map(p => (
+                                  <span key={p} style={{ display: 'inline-block', marginRight: 4, padding: '1px 5px', borderRadius: 3, background: 'var(--surface)', border: '1px solid var(--border)', fontSize: 10 }}>
+                                    {PORT_LABELS[p] ?? p}
+                                  </span>
+                                ))
+                              : <span style={{ color: 'var(--muted)' }}>—</span>
+                            }
+                          </td>
+                          <td style={{ color: r.ssh_open ? 'var(--green)' : 'var(--muted)' }}>{r.ssh_open ? '✓' : '—'}</td>
+                          <td>
                             <button className="btn btn-sm" onClick={() => {
-                              setForm(f => ({ ...f, ip: r.ip }))
-                              setShowForm(true)
-                            }}>Add</button>
-                          )}
-                        </td>
-                      </tr>
-                    ))}
+                              if (isAdding) { setAddingIp(null); return }
+                              setAddingIp(r.ip)
+                              setInlineLabel('')
+                              setInlineUsername('')
+                              setInlinePrivateKey('')
+                              if (sshKeys.length > 0) {
+                                setInlineKeyMode('existing')
+                                setInlineKey(sshKeys[0].id)
+                              } else {
+                                setInlineKeyMode('new')
+                              }
+                            }}>
+                              {isAdding ? 'Cancel' : 'Register'}
+                            </button>
+                          </td>
+                        </tr>
+                        {isAdding && (
+                          <tr key={`${r.ip}-add`} style={{ background: 'var(--surface)' }}>
+                            <td colSpan={5} style={{ padding: '10px 14px' }}>
+                              <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                                {sshKeys.length > 0 && (
+                                  <div style={{ display: 'flex', gap: 8 }}>
+                                    <button
+                                      className="btn btn-sm"
+                                      style={{ background: inlineKeyMode === 'existing' ? 'var(--green)' : undefined, color: inlineKeyMode === 'existing' ? '#000' : undefined }}
+                                      onClick={() => setInlineKeyMode('existing')}
+                                    >Use saved key</button>
+                                    <button
+                                      className="btn btn-sm"
+                                      style={{ background: inlineKeyMode === 'new' ? 'var(--green)' : undefined, color: inlineKeyMode === 'new' ? '#000' : undefined }}
+                                      onClick={() => setInlineKeyMode('new')}
+                                    >Paste new key</button>
+                                  </div>
+                                )}
+                                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                                  {inlineKeyMode === 'existing' && sshKeys.length > 0 ? (
+                                    <div className="form-group" style={{ margin: 0, minWidth: 200 }}>
+                                      <label style={{ fontSize: 11 }}>SSH Key *</label>
+                                      <select value={inlineKey} onChange={e => setInlineKey(Number(e.target.value))}>
+                                        {sshKeys.map(k => <option key={k.id} value={k.id}>{k.name} ({k.username})</option>)}
+                                      </select>
+                                    </div>
+                                  ) : (
+                                    <>
+                                      <div className="form-group" style={{ margin: 0, minWidth: 140 }}>
+                                        <label style={{ fontSize: 11 }}>SSH Username *</label>
+                                        <input value={inlineUsername} onChange={e => setInlineUsername(e.target.value)} placeholder="ubuntu" />
+                                      </div>
+                                      <div className="form-group" style={{ margin: 0, flex: 1, minWidth: 220 }}>
+                                        <label style={{ fontSize: 11 }}>Private Key (PEM) *</label>
+                                        <textarea
+                                          value={inlinePrivateKey}
+                                          onChange={e => setInlinePrivateKey(e.target.value)}
+                                          placeholder={'-----BEGIN OPENSSH PRIVATE KEY-----\n...\n-----END OPENSSH PRIVATE KEY-----'}
+                                          rows={3}
+                                          style={{ fontFamily: 'monospace', fontSize: 11, resize: 'vertical' }}
+                                        />
+                                      </div>
+                                    </>
+                                  )}
+                                  <div className="form-group" style={{ margin: 0, minWidth: 120 }}>
+                                    <label style={{ fontSize: 11 }}>Label</label>
+                                    <input value={inlineLabel} onChange={e => setInlineLabel(e.target.value)} placeholder="my-laptop" />
+                                  </div>
+                                  <button
+                                    className="btn btn-primary btn-sm"
+                                    disabled={inlineSubmitting}
+                                    onClick={async () => {
+                                      setInlineSubmitting(true)
+                                      setError('')
+                                      try {
+                                        let keyId = inlineKey
+                                        if (inlineKeyMode === 'new') {
+                                          if (!inlineUsername.trim() || !inlinePrivateKey.trim()) {
+                                            setError('Username and private key are required')
+                                            return
+                                          }
+                                          const saved = await api.sshKeys.create({ name: `${r.ip} key`, username: inlineUsername.trim(), private_key: inlinePrivateKey.trim() })
+                                          keyId = saved.id
+                                        }
+                                        await api.machines.create({ ip: r.ip, ssh_port: 22, ssh_key_id: keyId, label: inlineLabel || undefined })
+                                        setAddingIp(null)
+                                        setSuccess(`Machine ${r.ip} registered.`)
+                                        load()
+                                      } catch (e: unknown) {
+                                        setError(e instanceof Error ? e.message : String(e))
+                                      } finally {
+                                        setInlineSubmitting(false)
+                                      }
+                                    }}
+                                  >
+                                    {inlineSubmitting ? 'Registering…' : 'Register Machine'}
+                                  </button>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </>
+                    })}
                   </tbody>
                 </table>
               </div>
@@ -336,7 +482,7 @@ function Machines() {
             </thead>
             <tbody>
               {machines.map(m => (
-                <tr key={m.id}>
+                <tr key={m.id} onClick={() => setPanelMachine(m)} style={{ cursor: 'pointer' }}>
                   <td>
                     <div style={{ fontWeight: 500 }}>{m.label ?? m.ip}</div>
                     {m.label && <div style={{ fontSize: 11, color: 'var(--muted)' }}>{m.ip}</div>}
@@ -358,7 +504,7 @@ function Machines() {
                       className="btn btn-sm"
                       style={{ marginRight: 4 }}
                       disabled={checking === m.id}
-                      onClick={() => check(m.id)}
+                      onClick={e => { e.stopPropagation(); check(m.id) }}
                     >
                       {checking === m.id ? 'Checking…' : 'Check'}
                     </button>
@@ -366,17 +512,28 @@ function Machines() {
                       className="btn btn-sm"
                       style={{ marginRight: 4 }}
                       disabled={detecting === m.id}
-                      onClick={() => detectEngines(m.id)}
+                      onClick={e => { e.stopPropagation(); detectEngines(m.id) }}
                     >
                       {detecting === m.id ? 'Detecting…' : 'Detect Engines'}
                     </button>
-                    <button className="btn btn-danger btn-sm" onClick={() => remove(m.id)}>Delete</button>
+                    <button className="btn btn-danger btn-sm" onClick={e => { e.stopPropagation(); remove(m.id) }}>Delete</button>
                   </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
+      )}
+      {panelMachine && (
+        <>
+          <div onClick={() => setPanelMachine(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.4)', zIndex: 199 }} />
+          <MachinePanel
+            machine={panelMachine}
+            sshKeys={sshKeys}
+            onClose={() => setPanelMachine(null)}
+            onServerRegistered={load}
+          />
+        </>
       )}
     </div>
   )

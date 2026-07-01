@@ -38,6 +38,8 @@ class EngineDetectionResult(BaseModel):
     port: int
     engine: str
     open: bool
+    version: Optional[str] = None
+    databases: list[str] = []
 
 
 class ScanRequest(BaseModel):
@@ -49,3 +51,5 @@ class ScanResult(BaseModel):
     ip: str
     ping_ok: bool
     ssh_open: bool
+    hostname: Optional[str] = None
+    open_ports: list[int] = []

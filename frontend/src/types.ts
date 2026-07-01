@@ -209,12 +209,16 @@ export interface ScanResult {
   ip: string
   ping_ok: boolean
   ssh_open: boolean
+  hostname: string | null
+  open_ports: number[]
 }
 
 export interface EngineDetectionResult {
   port: number
   engine: string
   open: boolean
+  version: string | null
+  databases: string[]
 }
 
 export interface Site {

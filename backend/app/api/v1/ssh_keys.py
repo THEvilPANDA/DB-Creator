@@ -15,6 +15,17 @@ router = APIRouter(prefix="/ssh-keys", tags=["ssh-keys"])
 
 
 def _validate_private_key(pem: str, passphrase: str | None = None) -> None:
+    stripped = pem.strip()
+    if not stripped.startswith("-----BEGIN"):
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Invalid private key: expected a PEM-encoded key starting with "
+                "'-----BEGIN ... PRIVATE KEY-----'. "
+                "Paste the contents of your private key file (e.g. ~/.ssh/id_rsa or id_ed25519), "
+                "not the public key fingerprint."
+            ),
+        )
     try:
         asyncssh.import_private_key(pem, passphrase=passphrase)
     except Exception as exc:

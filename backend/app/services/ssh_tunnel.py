@@ -19,9 +19,14 @@ class SSHConnection:
         result = await self._conn.run(command, check=False)
         return result.stdout or ""
 
-    def host_fingerprint(self) -> Optional[str]:
+    def export_host_key(self, host: str, port: int) -> Optional[str]:
+        """Return a known_hosts-format line for the server's host key, for storage and later verification."""
         key = self._conn.get_server_host_key()
-        return key.get_fingerprint() if key else None
+        if not key:
+            return None
+        pub_key_line = key.export_public_key('openssh').decode().strip()
+        host_entry = f"[{host}]:{port}" if port != 22 else host
+        return f"{host_entry} {pub_key_line}"
 
     async def forward_port(
         self, remote_host: str, remote_port: int
@@ -40,14 +45,16 @@ async def open_ssh(
     username: str,
     key_material: str,
     passphrase: Optional[str] = None,
+    known_hosts_entry: Optional[str] = None,
 ) -> AsyncIterator[SSHConnection]:
     private_key = asyncssh.import_private_key(key_material, passphrase=passphrase)
+    known_hosts = asyncssh.import_known_hosts(known_hosts_entry) if known_hosts_entry else None
     conn = await asyncssh.connect(
         host,
         port=port,
         username=username,
         client_keys=[private_key],
-        known_hosts=None,
+        known_hosts=known_hosts,
     )
     try:
         yield SSHConnection(conn)
@@ -63,8 +70,9 @@ async def open_tunnel(
     key_material: str,
     db_port: int,
     passphrase: Optional[str] = None,
+    known_hosts_entry: Optional[str] = None,
 ) -> AsyncIterator[int]:
-    async with open_ssh(host, ssh_port, username, key_material, passphrase) as ssh:
+    async with open_ssh(host, ssh_port, username, key_material, passphrase, known_hosts_entry) as ssh:
         listener, local_port = await ssh.forward_port(host, db_port)
         try:
             yield local_port

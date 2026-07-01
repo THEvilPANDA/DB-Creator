@@ -68,6 +68,7 @@ async def get_provisioner(server, session=None):
             key_material=key_material,
             db_port=server.port,
             passphrase=passphrase,
+            known_hosts_entry=machine.host_fingerprint,
         ) as local_port:
             tunneled_dsn = _rewrite_dsn(admin_dsn, "127.0.0.1", local_port)
             yield _build_provisioner(server, tunneled_dsn)

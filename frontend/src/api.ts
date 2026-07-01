@@ -7,7 +7,7 @@ import type {
   SSHKey, SSHKeyCreate, Stats,
 } from './types'
 
-const BASE = import.meta.env.VITE_API_URL ?? '/api/v1'
+export const BASE = import.meta.env.VITE_API_URL ?? '/api/v1'
 const ADMIN_KEY = import.meta.env.VITE_ADMIN_KEY ?? ''
 
 const TOKEN_KEY = 'dbcreator_access_token'
@@ -191,6 +191,14 @@ export const api = {
       req<EngineDetectionResult[]>(`/machines/${id}/detect-engines`, { method: 'POST' }),
     scan: (data: { cidr: string; method: string }) =>
       req<ScanResult[]>('/machines/scan', { method: 'POST', body: JSON.stringify(data) }),
+    installDbUrl: (id: number, engine: string, action: 'install' | 'uninstall' = 'install') =>
+      `${BASE}/machines/${id}/install-db?engine=${encodeURIComponent(engine)}&action=${action}`,
+    terminalUrl: (id: number, token: string) =>
+      `${BASE.replace(/^http/, 'ws')}/machines/${id}/terminal?token=${encodeURIComponent(token)}`,
+  },
+  sql: {
+    query: (serverId: number, sql: string) =>
+      req<QueryResult>(`/servers/${serverId}/query`, { method: 'POST', body: JSON.stringify({ sql }) }),
   },
   sites: {
     list: () => req<Site[]>('/sites'),

@@ -7,7 +7,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.database import get_session
+from app.dependencies import require_admin
 from app.models.server import Server
+from app.models.user import User
 from app.schemas.server import (
     CapacityMetrics,
     HealthSummaryResponse,
@@ -17,6 +19,14 @@ from app.schemas.server import (
     ServerUpdate,
 )
 from app.services.provisioner.factory import get_provisioner
+from app.api.v1.databases import (
+    QueryRequest,
+    QueryResponse,
+    _run_pg_query,
+    _run_mysql_query,
+    _run_mongodb_query,
+    _run_qdrant_query,
+)
 
 router = APIRouter(prefix="/servers", tags=["servers"])
 
@@ -122,7 +132,7 @@ async def delete_server(server_id: int, session: AsyncSession = Depends(get_sess
     if not server or server.is_deleted:
         raise HTTPException(status_code=404, detail="Server not found")
     server.is_deleted = True
-    server.deleted_at = datetime.now(timezone.utc)
+    server.deleted_at = datetime.now(timezone.utc).replace(tzinfo=None)
     server.deleted_by = "system"
     session.add(server)
     await session.commit()
@@ -136,3 +146,60 @@ async def get_server_capacity(server_id: int, session: AsyncSession = Depends(ge
     if not server or server.is_deleted:
         raise HTTPException(status_code=404, detail="Server not found")
     return await _live_capacity(server, session)
+
+
+@router.post("/{server_id}/query", response_model=QueryResponse)
+async def query_server(
+    server_id: int,
+    payload: QueryRequest,
+    _: "User" = Depends(require_admin),
+    session: AsyncSession = Depends(get_session),
+):
+    server = await session.get(Server, server_id)
+    if not server or server.is_deleted:
+        raise HTTPException(status_code=404, detail="Server not found")
+    if not server.admin_dsn:
+        raise HTTPException(
+            status_code=400,
+            detail="Server has no admin DSN — set it in the Servers page before querying",
+        )
+
+    engine = server.engine
+
+    if engine in ("postgresql", "pgvector"):
+        return await _run_pg_query(server.admin_dsn, payload.sql)
+
+    elif engine == "mysql":
+        import aiomysql
+        from urllib.parse import urlparse
+        parsed = urlparse(server.admin_dsn)
+        try:
+            conn = await aiomysql.connect(
+                host=parsed.hostname or "localhost",
+                port=parsed.port or 3306,
+                user=parsed.username or "root",
+                password=parsed.password or "",
+                db=parsed.path.lstrip("/") or None,
+                autocommit=True,
+            )
+        except Exception:
+            return QueryResponse(columns=[], rows=[], row_count=0, error="Cannot connect to MySQL")
+        try:
+            return await _run_mysql_query(conn, payload.sql)
+        finally:
+            conn.close()
+
+    elif engine == "mongodb":
+        from motor.motor_asyncio import AsyncIOMotorClient
+        client = AsyncIOMotorClient(server.admin_dsn, serverSelectionTimeoutMS=5000)
+        try:
+            return await _run_mongodb_query(client, payload.sql)
+        finally:
+            client.close()
+
+    elif engine == "qdrant":
+        api_key = getattr(server, "api_key", None)
+        return await _run_qdrant_query(server.admin_dsn, api_key, payload.sql)
+
+    else:
+        raise HTTPException(status_code=400, detail=f"Unsupported engine: {engine!r}")

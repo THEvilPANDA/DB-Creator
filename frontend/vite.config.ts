@@ -9,7 +9,10 @@ export default defineConfig({
     allowedHosts: true,
     watch: { usePolling: true },
     proxy: {
-      '/api': API_TARGET,
+      '/api': {
+        target: API_TARGET,
+        ws: true,
+      },
       '/health': API_TARGET,
     },
   },

@@ -18,6 +18,21 @@ async def test_open_ssh_connects_with_key():
 
 
 @pytest.mark.asyncio
+async def test_open_ssh_verifies_known_host():
+    mock_conn = MagicMock()
+    mock_conn.get_server_host_key.return_value = None
+    mock_known = MagicMock()
+
+    with patch("app.services.ssh_tunnel.asyncssh.connect", new=AsyncMock(return_value=mock_conn)), \
+         patch("app.services.ssh_tunnel.asyncssh.import_private_key", return_value=MagicMock()), \
+         patch("app.services.ssh_tunnel.asyncssh.import_known_hosts", return_value=mock_known) as mock_import_kh:
+        from app.services.ssh_tunnel import open_ssh
+        async with open_ssh("1.2.3.4", 22, "ubuntu", "FAKE_PEM", known_hosts_entry="1.2.3.4 ssh-rsa AAAA") as conn:
+            assert conn is not None
+        mock_import_kh.assert_called_once_with("1.2.3.4 ssh-rsa AAAA")
+
+
+@pytest.mark.asyncio
 async def test_open_tunnel_yields_local_port():
     mock_listener = MagicMock()
     mock_conn = MagicMock()
