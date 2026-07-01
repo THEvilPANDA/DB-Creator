@@ -5,6 +5,7 @@ import 'xterm/css/xterm.css'
 
 interface Props {
   wsUrl: string
+  token: string
   onClose: () => void
 }
 
@@ -109,7 +110,7 @@ const QUICK_CMDS_WINDOWS: Record<string, { label: string; cmd: string }[]> = {
   ],
 }
 
-export default function Terminal({ wsUrl, onClose: _onClose }: Props) {
+export default function Terminal({ wsUrl, token, onClose: _onClose }: Props) {
   const containerRef = useRef<HTMLDivElement>(null)
   const termRef = useRef<XTerm | null>(null)
   const wsRef = useRef<WebSocket | null>(null)
@@ -141,6 +142,7 @@ export default function Terminal({ wsUrl, onClose: _onClose }: Props) {
     wsRef.current = ws
 
     ws.onopen = () => {
+      ws.send(JSON.stringify({ type: 'auth', token }))
       setConnected(true)
       const { cols, rows } = term
       ws.send(JSON.stringify({ type: 'resize', cols, rows }))
@@ -182,7 +184,7 @@ export default function Terminal({ wsUrl, onClose: _onClose }: Props) {
       ws.close()
       term.dispose()
     }
-  }, [wsUrl])
+  }, [wsUrl, token])
 
   const quickCmds = isWindows ? QUICK_CMDS_WINDOWS : QUICK_CMDS_LINUX
 

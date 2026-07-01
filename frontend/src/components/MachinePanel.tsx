@@ -161,7 +161,7 @@ export default function MachinePanel({ machine, sshKeys: _sshKeys, onClose, onSe
   }
 
   const token = auth.getToken() ?? ''
-  const wsUrl = `${BASE.replace(/^http/, 'ws')}/machines/${machine.id}/terminal?token=${encodeURIComponent(token)}`
+  const wsUrl = `${BASE.replace(/^http/, 'ws')}/machines/${machine.id}/terminal`
 
   const TABS: { id: Tab; label: string }[] = [
     { id: 'engines', label: 'Engines' },
@@ -333,7 +333,7 @@ export default function MachinePanel({ machine, sshKeys: _sshKeys, onClose, onSe
         )}
 
         {/* TERMINAL */}
-        {tab === 'terminal' && <Terminal wsUrl={wsUrl} onClose={onClose} />}
+        {tab === 'terminal' && <Terminal wsUrl={wsUrl} token={token} onClose={onClose} />}
 
         {/* INSTALL DB */}
         {tab === 'install' && (

@@ -5,7 +5,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.database import get_session
+from app.dependencies import require_admin
 from app.models.site import Site, SiteDeployment, SiteMigration
+from app.models.user import User
 from app.schemas.site import (
     MigrationCreate,
     MigrationRead,
@@ -25,7 +27,7 @@ def _utcnow() -> datetime:
 
 
 @router.post("", response_model=SiteRead, status_code=201)
-async def create_site(payload: SiteCreate, session: AsyncSession = Depends(get_session)):
+async def create_site(payload: SiteCreate, session: AsyncSession = Depends(get_session), _: User = Depends(require_admin)):
     site = Site(**payload.model_dump())
     session.add(site)
     await session.commit()
@@ -36,13 +38,13 @@ async def create_site(payload: SiteCreate, session: AsyncSession = Depends(get_s
 
 
 @router.get("", response_model=list[SiteRead])
-async def list_sites(session: AsyncSession = Depends(get_session)):
+async def list_sites(session: AsyncSession = Depends(get_session), _: User = Depends(require_admin)):
     result = await session.execute(select(Site).where(Site.is_deleted == False))  # noqa: E712
     return [SiteRead.model_validate(s) for s in result.scalars().all()]
 
 
 @router.get("/migrations/{migration_id}", response_model=MigrationRead)
-async def get_migration(migration_id: int, session: AsyncSession = Depends(get_session)):
+async def get_migration(migration_id: int, session: AsyncSession = Depends(get_session), _: User = Depends(require_admin)):
     migration = await session.get(SiteMigration, migration_id)
     if not migration:
         raise HTTPException(status_code=404, detail="Migration not found")
@@ -50,7 +52,7 @@ async def get_migration(migration_id: int, session: AsyncSession = Depends(get_s
 
 
 @router.get("/{site_id}", response_model=SiteRead)
-async def get_site(site_id: int, session: AsyncSession = Depends(get_session)):
+async def get_site(site_id: int, session: AsyncSession = Depends(get_session), _: User = Depends(require_admin)):
     site = await session.get(Site, site_id)
     if not site or site.is_deleted:
         raise HTTPException(status_code=404, detail="Site not found")
@@ -62,6 +64,7 @@ async def update_site(
     site_id: int,
     payload: SiteUpdate,
     session: AsyncSession = Depends(get_session),
+    _: User = Depends(require_admin),
 ):
     site = await session.get(Site, site_id)
     if not site or site.is_deleted:
@@ -78,7 +81,7 @@ async def update_site(
 
 
 @router.delete("/{site_id}", response_model=SiteRead)
-async def delete_site(site_id: int, session: AsyncSession = Depends(get_session)):
+async def delete_site(site_id: int, session: AsyncSession = Depends(get_session), _: User = Depends(require_admin)):
     site = await session.get(Site, site_id)
     if not site or site.is_deleted:
         raise HTTPException(status_code=404, detail="Site not found")
@@ -94,7 +97,7 @@ async def delete_site(site_id: int, session: AsyncSession = Depends(get_session)
 
 
 @router.get("/{site_id}/deployments", response_model=list[SiteDeploymentRead])
-async def list_deployments(site_id: int, session: AsyncSession = Depends(get_session)):
+async def list_deployments(site_id: int, session: AsyncSession = Depends(get_session), _: User = Depends(require_admin)):
     site = await session.get(Site, site_id)
     if not site or site.is_deleted:
         raise HTTPException(status_code=404, detail="Site not found")
@@ -109,6 +112,7 @@ async def start_migration(
     site_id: int,
     payload: MigrationCreate,
     session: AsyncSession = Depends(get_session),
+    _: User = Depends(require_admin),
 ):
     site = await session.get(Site, site_id)
     if not site or site.is_deleted:

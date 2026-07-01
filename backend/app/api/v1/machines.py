@@ -222,11 +222,17 @@ async def scan_network_stream(
 async def machine_terminal(
     websocket: WebSocket,
     machine_id: int,
-    token: str = Query(...),
     session: AsyncSession = Depends(get_session),
 ):
+    await websocket.accept()
+    # First message must be {"type": "auth", "token": "<jwt>"}
+    # Avoids leaking the JWT into access logs via query params.
     try:
-        payload = decode_token(token)
+        auth_text = await asyncio.wait_for(websocket.receive_text(), timeout=10)
+        auth_msg = json.loads(auth_text)
+        if auth_msg.get("type") != "auth":
+            raise ValueError("Expected auth message")
+        payload = decode_token(auth_msg["token"])
         if payload.get("type") != "access" or not payload.get("is_admin"):
             await websocket.close(code=4003)
             return
@@ -240,7 +246,6 @@ async def machine_terminal(
         return
 
     key_material, passphrase, username = await _get_key_material(session, machine)
-    await websocket.accept()
 
     conn = None
     try:
