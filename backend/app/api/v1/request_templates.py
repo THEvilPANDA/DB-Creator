@@ -5,10 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.database import get_session
+from app.dependencies import require_admin
 from app.models.request_template import RequestTemplate
 from app.schemas.request_template import RequestTemplateCreate, RequestTemplateRead, RequestTemplateUpdate
 
-router = APIRouter(prefix="/request-templates", tags=["request-templates"])
+router = APIRouter(prefix="/request-templates", tags=["request-templates"], dependencies=[Depends(require_admin)])
 
 
 @router.post("", response_model=RequestTemplateRead, status_code=201)

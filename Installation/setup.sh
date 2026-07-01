@@ -15,17 +15,31 @@ echo "╚═══════════════════════�
 # 1. backend/.env
 BACKEND_ENV="$ROOT/backend/.env"
 if [ ! -f "$BACKEND_ENV" ]; then
-  cat > "$BACKEND_ENV" <<'EOF'
+  FERNET_KEY=$(python3 -c "import os,base64; print(base64.urlsafe_b64encode(os.urandom(32)).decode())" 2>/dev/null \
+    || openssl rand -base64 32 | tr '+/' '-_' | tr -d '=\n')
+  JWT_SECRET=$(python3 -c "import secrets; print(secrets.token_hex(32))" 2>/dev/null \
+    || openssl rand -hex 32)
+  ADMIN_KEY=$(python3 -c "import secrets; print(secrets.token_hex(16))" 2>/dev/null \
+    || openssl rand -hex 16)
+  ADMIN_PASS=$(python3 -c "import secrets; print(secrets.token_urlsafe(16))" 2>/dev/null \
+    || openssl rand -base64 12)
+  cat > "$BACKEND_ENV" <<EOF
 DATABASE_URL=postgresql+asyncpg://dbcreator:dbcreator@localhost:5432/dbcreator
 REDIS_URL=redis://localhost:6379/0
-FERNET_KEY=YnF46Ea_bY5OsdxJ2xOGoAo471HkEJslQfMpTxaRsNU=
+FERNET_KEY=${FERNET_KEY}
 DEBUG=false
 ENVIRONMENT=development
-ADMIN_KEY=dev-admin-key
-JWT_SECRET=dev-jwt-secret-change-in-production
-DEFAULT_ADMIN_PASSWORD=admin123
+ADMIN_KEY=${ADMIN_KEY}
+JWT_SECRET=${JWT_SECRET}
+DEFAULT_ADMIN_PASSWORD=${ADMIN_PASS}
 EOF
-  ok "Created backend/.env"
+  ok "Created backend/.env with generated secrets"
+  echo ""
+  echo -e "  ${CYAN}Admin credentials (save these):${NC}"
+  echo "    Username: admin"
+  echo "    Password: ${ADMIN_PASS}"
+  echo "    Admin key: ${ADMIN_KEY}"
+  echo ""
 else
   ok "backend/.env exists"
 fi

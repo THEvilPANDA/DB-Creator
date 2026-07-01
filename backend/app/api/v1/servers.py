@@ -28,7 +28,17 @@ from app.api.v1.databases import (
     _run_qdrant_query,
 )
 
-router = APIRouter(prefix="/servers", tags=["servers"])
+router = APIRouter(prefix="/servers", tags=["servers"], dependencies=[Depends(require_admin)])
+
+import re as _re
+
+def _assert_select_only(sql: str) -> None:
+    """Raise 400 if sql contains anything other than SELECT/WITH/SHOW/EXPLAIN."""
+    stripped = _re.sub(r'/\*.*?\*/', '', sql, flags=_re.DOTALL)  # strip block comments
+    stripped = _re.sub(r'--[^\n]*', '', stripped)                  # strip line comments
+    first_word = stripped.strip().split()[0].upper() if stripped.strip() else ''
+    if first_word not in ('SELECT', 'WITH', 'SHOW', 'EXPLAIN', 'DESCRIBE', 'DESC'):
+        raise HTTPException(status_code=400, detail="Only SELECT queries are allowed in the SQL console")
 
 _UNKNOWN_CAPACITY = lambda sid: CapacityMetrics(  # noqa: E731
     server_id=sid, db_count=0, active_connections=0,
@@ -164,6 +174,7 @@ async def query_server(
             detail="Server has no admin DSN — set it in the Servers page before querying",
         )
 
+    _assert_select_only(payload.sql)
     engine = server.engine
 
     if engine in ("postgresql", "pgvector"):

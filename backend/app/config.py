@@ -11,16 +11,23 @@ class Settings(BaseSettings):
     DEBUG: bool = False
     ENVIRONMENT: str = "development"
     CORS_ORIGINS: list[str] = ["http://localhost:5173", "http://localhost:5174", "http://localhost:3000"]
-    # Set to a strong random secret in production to protect admin endpoints.
-    # Phase 7 replaces this with JWT role checks.
     ADMIN_KEY: str = ""
-    # JWT — change JWT_SECRET to a long random value in production.
-    JWT_SECRET: str = "change-me-in-production"
+    JWT_SECRET: str = ""
     JWT_ALGORITHM: str = "HS256"
     JWT_EXPIRE_MINUTES: int = 60
     JWT_REFRESH_EXPIRE_DAYS: int = 7
-    # Seed: set DEFAULT_ADMIN_PASSWORD in .env to create the initial admin on first seed.
     DEFAULT_ADMIN_PASSWORD: str = ""
 
 
-settings = Settings()
+def _validate_settings(s: Settings) -> Settings:
+    errors = []
+    if not s.JWT_SECRET:
+        errors.append("JWT_SECRET is not set — generate with: python -c \"import secrets; print(secrets.token_hex(32))\"")
+    if not s.FERNET_KEY:
+        errors.append("FERNET_KEY is not set — generate with: python -c \"import os,base64; print(base64.urlsafe_b64encode(os.urandom(32)).decode())\"")
+    if errors:
+        raise RuntimeError("Missing required configuration:\n  " + "\n  ".join(errors))
+    return s
+
+
+settings = _validate_settings(Settings())

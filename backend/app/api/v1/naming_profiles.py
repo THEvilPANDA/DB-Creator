@@ -6,11 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.database import get_session
+from app.dependencies import require_admin
 from app.models.naming_profile import NamingProfile
 from app.schemas.naming_profile import NamingProfileCreate, NamingProfileRead, NamingProfileUpdate
 from app.services.naming import NamingService
 
-router = APIRouter(prefix="/naming-profiles", tags=["naming-profiles"])
+router = APIRouter(prefix="/naming-profiles", tags=["naming-profiles"], dependencies=[Depends(require_admin)])
 _naming = NamingService()
 
 

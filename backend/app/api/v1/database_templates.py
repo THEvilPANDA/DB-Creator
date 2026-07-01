@@ -5,10 +5,11 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.database import get_session
+from app.dependencies import require_admin
 from app.models.database_template import DatabaseTemplate
 from app.schemas.database_template import DatabaseTemplateCreate, DatabaseTemplateRead, DatabaseTemplateUpdate
 
-router = APIRouter(prefix="/database-templates", tags=["database-templates"])
+router = APIRouter(prefix="/database-templates", tags=["database-templates"], dependencies=[Depends(require_admin)])
 
 
 @router.post("", response_model=DatabaseTemplateRead, status_code=201)

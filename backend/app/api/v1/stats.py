@@ -3,11 +3,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import func, select
 
 from app.database import get_session
+from app.dependencies import require_admin
 from app.models.creation_log import CreationLog
 from app.models.job import Job
 from app.models.server import Server
 
-router = APIRouter(prefix="/stats", tags=["stats"])
+router = APIRouter(prefix="/stats", tags=["stats"], dependencies=[Depends(require_admin)])
 
 
 @router.get("")

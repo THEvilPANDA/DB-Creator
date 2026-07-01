@@ -5,12 +5,13 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import func, select
 
 from app.database import get_session
+from app.dependencies import require_admin
 from app.models.creation_log import CreationLog
 from app.models.job import Job
 from app.schemas.common import PaginatedResponse
 from app.schemas.creation_log import CreationLogRead
 
-router = APIRouter(prefix="/history", tags=["history"])
+router = APIRouter(prefix="/history", tags=["history"], dependencies=[Depends(require_admin)])
 
 
 @router.get("", response_model=PaginatedResponse[CreationLogRead])

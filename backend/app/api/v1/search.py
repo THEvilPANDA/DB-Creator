@@ -6,11 +6,12 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import select
 
 from app.database import get_session
+from app.dependencies import require_admin
 from app.models.database_template import DatabaseTemplate
 from app.models.job import Job
 from app.models.server import Server
 
-router = APIRouter(prefix="/search", tags=["search"])
+router = APIRouter(prefix="/search", tags=["search"], dependencies=[Depends(require_admin)])
 
 SearchType = Literal["all", "jobs", "servers", "templates"]
 

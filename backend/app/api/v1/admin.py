@@ -25,14 +25,9 @@ _VALID_ENVIRONMENTS = {"development", "staging", "production"}
 
 
 def require_admin_key(x_admin_key: Optional[str] = Header(default=None)) -> None:
-    """Guard admin endpoints with a shared secret.
-
-    Set ADMIN_KEY in .env for production. If unset, access is logged but allowed
-    (dev convenience). Phase 7 replaces this with JWT role-based auth.
-    """
+    """Guard admin endpoints with a shared secret (X-Admin-Key header)."""
     if not settings.ADMIN_KEY:
-        logger.warning("ADMIN_KEY not set — admin endpoint is unprotected. Set it in .env.")
-        return
+        raise HTTPException(503, "ADMIN_KEY is not configured — set it in .env")
     if x_admin_key != settings.ADMIN_KEY:
         raise HTTPException(403, "Admin key required (X-Admin-Key header)")
 

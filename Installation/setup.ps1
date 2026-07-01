@@ -8,23 +8,46 @@ $FrontendEnvFile = Join-Path (Join-Path $Root "frontend") ".env"
 function Write-Step  { param($msg) Write-Host "  " -NoNewline; Write-Host "OK " -ForegroundColor Green -NoNewline; Write-Host $msg }
 function Write-Fatal { param($msg) Write-Host "`n  ERROR: $msg" -ForegroundColor Red; exit 1 }
 
+function New-RandomHex { param([int]$Bytes = 32)
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $buf = New-Object byte[] $Bytes
+    $rng.GetBytes($buf)
+    ($buf | ForEach-Object { $_.ToString('x2') }) -join ''
+}
+function New-FernetKey {
+    $rng = [System.Security.Cryptography.RandomNumberGenerator]::Create()
+    $buf = New-Object byte[] 32
+    $rng.GetBytes($buf)
+    [System.Convert]::ToBase64String($buf).Replace('+', '-').Replace('/', '_').TrimEnd('=')
+}
+
 Write-Host "================================================================="
 Write-Host "             DB Creator -- Setup & Start"
 Write-Host "================================================================="
 
 # 1. backend/.env
 if (-not (Test-Path $BackendEnvFile)) {
+    $FernetKey = New-FernetKey
+    $JwtSecret = New-RandomHex 32
+    $AdminKey  = New-RandomHex 16
+    $AdminPass = New-RandomHex 12
     @"
 DATABASE_URL=postgresql+asyncpg://dbcreator:dbcreator@localhost:5432/dbcreator
 REDIS_URL=redis://localhost:6379/0
-FERNET_KEY=YnF46Ea_bY5OsdxJ2xOGoAo471HkEJslQfMpTxaRsNU=
+FERNET_KEY=$FernetKey
 DEBUG=false
 ENVIRONMENT=development
-ADMIN_KEY=dev-admin-key
-JWT_SECRET=dev-jwt-secret-change-in-production
-DEFAULT_ADMIN_PASSWORD=admin123
+ADMIN_KEY=$AdminKey
+JWT_SECRET=$JwtSecret
+DEFAULT_ADMIN_PASSWORD=$AdminPass
 "@ | Set-Content $BackendEnvFile -Encoding utf8
-    Write-Step "Created backend/.env"
+    Write-Step "Created backend/.env with generated secrets"
+    Write-Host ""
+    Write-Host "  Admin credentials (save these):" -ForegroundColor Cyan
+    Write-Host "    Username: admin"
+    Write-Host "    Password: $AdminPass"
+    Write-Host "    Admin key: $AdminKey"
+    Write-Host ""
 } else {
     Write-Step "backend/.env exists"
 }
@@ -75,7 +98,7 @@ Write-Host "  Frontend  ->  http://localhost:5173" -ForegroundColor Green
 Write-Host "  Backend   ->  http://localhost:8000" -ForegroundColor Green
 Write-Host "  API docs  ->  http://localhost:8000/docs" -ForegroundColor Green
 Write-Host "-----------------------------------------------------------------" -ForegroundColor Green
-Write-Host "  Login:  admin / admin123" -ForegroundColor Green
+Write-Host "  Login:  admin / (see password printed above, or check backend/.env)" -ForegroundColor Green
 Write-Host "-----------------------------------------------------------------" -ForegroundColor Green
 Write-Host "  Logs:   $DCCmd logs -f" -ForegroundColor Green
 Write-Host "  Stop:   .\Installation\stop.ps1" -ForegroundColor Green
