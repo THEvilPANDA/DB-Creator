@@ -33,11 +33,12 @@ router = APIRouter(prefix="/servers", tags=["servers"], dependencies=[Depends(re
 import re as _re
 
 def _assert_select_only(sql: str) -> None:
-    """Raise 400 if sql contains anything other than SELECT/WITH/SHOW/EXPLAIN."""
-    stripped = _re.sub(r'/\*.*?\*/', '', sql, flags=_re.DOTALL)  # strip block comments
-    stripped = _re.sub(r'--[^\n]*', '', stripped)                  # strip line comments
+    stripped = _re.sub(r'/\*.*?\*/', '', sql, flags=_re.DOTALL)
+    stripped = _re.sub(r'--[^\n]*', '', stripped)
+    if ';' in stripped:
+        raise HTTPException(status_code=400, detail="Multiple statements are not permitted")
     first_word = stripped.strip().split()[0].upper() if stripped.strip() else ''
-    if first_word not in ('SELECT', 'WITH', 'SHOW', 'EXPLAIN', 'DESCRIBE', 'DESC'):
+    if first_word not in ('SELECT', 'WITH'):
         raise HTTPException(status_code=400, detail="Only SELECT queries are allowed in the SQL console")
 
 _UNKNOWN_CAPACITY = lambda sid: CapacityMetrics(  # noqa: E731
