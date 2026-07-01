@@ -1,9 +1,9 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 $ErrorActionPreference = "Stop"
 
 $Root            = Split-Path $PSScriptRoot -Parent
-$BackendEnvFile  = Join-Path $Root "backend" ".env"
-$FrontendEnvFile = Join-Path $Root "frontend" ".env"
+$BackendEnvFile  = Join-Path (Join-Path $Root "backend") ".env"
+$FrontendEnvFile = Join-Path (Join-Path $Root "frontend") ".env"
 
 function Write-Step  { param($msg) Write-Host "  " -NoNewline; Write-Host "OK " -ForegroundColor Green -NoNewline; Write-Host $msg }
 function Write-Fatal { param($msg) Write-Host "`n  ERROR: $msg" -ForegroundColor Red; exit 1 }
@@ -50,7 +50,7 @@ Write-Step "Docker running"
 # 4. Start
 Set-Location $Root
 Write-Host ""
-Write-Host "  Starting all services (first run builds images — takes a few minutes)..." -ForegroundColor Cyan
+Write-Host "  Starting all services (first run builds images -- takes a few minutes)..." -ForegroundColor Cyan
 docker compose up -d
 if ($LASTEXITCODE -ne 0) { Write-Fatal "docker compose up failed. Check output above." }
 
