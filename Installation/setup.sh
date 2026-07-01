@@ -9,7 +9,7 @@ ok()   { echo -e "  ${GREEN}OK${NC}  $1"; }
 fatal(){ echo -e "\n  ${RED}ERROR:${NC} $1"; exit 1; }
 
 echo "╔══════════════════════════════════════════════════════════════════╗"
-echo "║              DB Creator — Setup & Start                         ║"
+echo "║              DB Creator -- Setup & Start                        ║"
 echo "╚══════════════════════════════════════════════════════════════════╝"
 
 # 1. backend/.env
@@ -44,22 +44,32 @@ command -v docker &>/dev/null || fatal "Docker not found. Install Docker Engine 
 docker info &>/dev/null        || fatal "Docker is not running. Start it and re-run."
 ok "Docker running"
 
-# 4. Start
+# 4. Detect compose command (v2 plugin preferred, v1 standalone fallback)
+if docker compose version &>/dev/null 2>&1; then
+  DC="docker compose"
+elif command -v docker-compose &>/dev/null; then
+  DC="docker-compose"
+else
+  fatal "Neither 'docker compose' nor 'docker-compose' found. Install Docker Compose and re-run."
+fi
+ok "Compose: $DC"
+
+# 5. Start
 cd "$ROOT"
 echo ""
-echo -e "  ${CYAN}Starting all services (first run builds images — takes a few minutes)...${NC}"
-docker compose up -d
+echo -e "  ${CYAN}Starting all services (first run builds images -- takes a few minutes)...${NC}"
+$DC up -d
 
 echo ""
 echo "╔══════════════════════════════════════════════════════════════════╗"
 echo "║  All systems go!                                                 ║"
 echo "╠══════════════════════════════════════════════════════════════════╣"
-echo "║  Frontend  →  http://localhost:5173                              ║"
-echo "║  Backend   →  http://localhost:8000                              ║"
-echo "║  API docs  →  http://localhost:8000/docs                         ║"
+echo "║  Frontend  ->  http://localhost:5173                             ║"
+echo "║  Backend   ->  http://localhost:8000                             ║"
+echo "║  API docs  ->  http://localhost:8000/docs                        ║"
 echo "╠══════════════════════════════════════════════════════════════════╣"
 echo "║  Login:  admin / admin123                                        ║"
 echo "╠══════════════════════════════════════════════════════════════════╣"
-echo "║  Logs:   docker compose logs -f                                  ║"
+echo "║  Logs:   $DC logs -f"
 echo "║  Stop:   bash Installation/stop.sh                               ║"
 echo "╚══════════════════════════════════════════════════════════════════╝"

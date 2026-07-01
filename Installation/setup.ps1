@@ -47,12 +47,25 @@ if ($LASTEXITCODE -ne 0) {
 }
 Write-Step "Docker running"
 
-# 4. Start
+# 4. Detect compose command (v2 plugin preferred, v1 standalone fallback)
+$null = docker compose version 2>$null
+if ($LASTEXITCODE -eq 0) {
+    function Invoke-Compose { docker compose @args }
+    $DCCmd = "docker compose"
+} elseif (Get-Command docker-compose -ErrorAction SilentlyContinue) {
+    function Invoke-Compose { docker-compose @args }
+    $DCCmd = "docker-compose"
+} else {
+    Write-Fatal "Neither 'docker compose' nor 'docker-compose' found. Install Docker Compose and re-run."
+}
+Write-Step "Compose: $DCCmd"
+
+# 5. Start
 Set-Location $Root
 Write-Host ""
 Write-Host "  Starting all services (first run builds images -- takes a few minutes)..." -ForegroundColor Cyan
-docker compose up -d
-if ($LASTEXITCODE -ne 0) { Write-Fatal "docker compose up failed. Check output above." }
+Invoke-Compose up -d
+if ($LASTEXITCODE -ne 0) { Write-Fatal "$DCCmd up failed. Check output above." }
 
 Write-Host ""
 Write-Host "=================================================================" -ForegroundColor Green
@@ -64,6 +77,6 @@ Write-Host "  API docs  ->  http://localhost:8000/docs" -ForegroundColor Green
 Write-Host "-----------------------------------------------------------------" -ForegroundColor Green
 Write-Host "  Login:  admin / admin123" -ForegroundColor Green
 Write-Host "-----------------------------------------------------------------" -ForegroundColor Green
-Write-Host "  Logs:   docker compose logs -f" -ForegroundColor Green
+Write-Host "  Logs:   $DCCmd logs -f" -ForegroundColor Green
 Write-Host "  Stop:   .\Installation\stop.ps1" -ForegroundColor Green
 Write-Host "=================================================================" -ForegroundColor Green
